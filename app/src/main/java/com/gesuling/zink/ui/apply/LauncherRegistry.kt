@@ -4,7 +4,6 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.pm.ResolveInfo
 import android.widget.Toast
 
 /**
@@ -129,6 +128,14 @@ data class LauncherRuntimeState(
             ApplyMethod.ALTERNATIVE -> "Alternative Required"
         }
 }
+
+/**
+ * Current HOME package and the curated launcher integration states on this device.
+ */
+data class LauncherRuntimeSnapshot(
+    val defaultHomePackage: String?,
+    val launchers: List<LauncherRuntimeState>
+)
 
 /**
  * Central Maintainable Repository of Verified Launcher Compatibility Data.
@@ -607,7 +614,42 @@ object LauncherRegistry {
             )
         ),
 
-        // ── 13. Google Pixel Launcher ──
+        // ── Xiaomi HyperOS System Launcher ──
+        LauncherSpec(
+            id = "xiaomi_system",
+            name = "Xiaomi HyperOS System Launcher",
+            developer = "Xiaomi",
+            packageNames = listOf("com.miui.home"),
+            playStoreUrl = null,
+            applyMethod = ApplyMethod.ALTERNATIVE,
+            tagline = "No verified standard ZINK icon-pack integration",
+            supportedVersions = "Xiaomi MIUI / HyperOS system launcher",
+            requirements = listOf("Xiaomi System Launcher selected as the device HOME app"),
+            settingsPath = listOf("Use a compatible third-party launcher", "Set it as the default HOME app", "Select ZINK in that launcher's icon settings"),
+            setupSteps = listOf(
+                "ZINK detects the Xiaomi System Launcher, but has no verified standard icon-pack integration for it.",
+                "Install a launcher listed by ZINK as supporting icon packs, such as Nova, Niagara, Smart Launcher, or Lawnchair.",
+                "Set that launcher as the default HOME app in Android Settings.",
+                "Open the selected launcher's icon settings and choose ZINK."
+            ),
+            limitations = listOf(
+                "ZINK's standard appfilter.xml pack is not a Xiaomi Themes .mtz theme and cannot be applied directly through the stock HyperOS launcher.",
+                "Xiaomi Themes may offer theme-provided icons; those are separate from ZINK's launcher icon-pack integration."
+            ),
+            troubleshooting = listOf(
+                "If the HOME screen still uses Xiaomi System Launcher, ZINK icons will not be applied by this integration."
+            ),
+            unavailableMessage = "No verified ZINK icon-pack integration for Xiaomi System Launcher. Use a compatible third-party launcher to apply ZINK.",
+            verification = VerificationSource(
+                url = "https://github.com/Haoyu-UT/HyperOS-Launcher-for-POCO/blob/main/docs/how-it-works.md",
+                sourceType = "HyperOS launcher package mapping (community ROM source)",
+                dateChecked = "2026-11-21",
+                evidence = "HyperOS launcher integration documentation identifies com.miui.home as the Xiaomi System Launcher package and distinguishes android.miui.home.launcher.res as a resource overlay. This is package evidence, not verification that ZINK's standard appfilter format is supported.",
+                confidence = ConfidenceLevel.UNVERIFIED
+            )
+        ),
+
+        // ── 14. Google Pixel Launcher ──
         LauncherSpec(
             id = "pixel",
             name = "Google Pixel Launcher",
@@ -681,18 +723,38 @@ object LauncherRegistry {
     }
 
     /**
-     * Resolves the default home launcher currently set on the device.
+     * Resolves the user's selected HOME app, not merely any activity that can handle HOME.
      */
     fun detectDefaultLauncherPackage(context: Context): String? {
-        val intent = Intent(Intent.ACTION_MAIN).apply {
+        val packageManager = context.packageManager
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
         }
-        val resolveInfo: ResolveInfo? = context.packageManager.resolveActivity(
-            intent,
+        val homeActivities = packageManager.queryIntentActivities(
+            homeIntent,
             PackageManager.MATCH_DEFAULT_ONLY
         )
-        return resolveInfo?.activityInfo?.packageName
+        val resolvedHome = packageManager.resolveActivity(
+            homeIntent,
+            PackageManager.MATCH_DEFAULT_ONLY
+        )?.activityInfo ?: return null
+
+        // A system resolver is not itself a HOME launcher. Accept only a concrete HOME activity
+        // returned by PackageManager's HOME query.
+        return homeActivities
+            .firstOrNull {
+                it.activityInfo?.packageName == resolvedHome.packageName &&
+                    it.activityInfo?.name == resolvedHome.name
+            }
+            ?.activityInfo
+            ?.packageName
     }
+
+    fun getApplicationLabel(context: Context, packageName: String): String =
+        runCatching {
+            val applicationInfo = context.packageManager.getApplicationInfo(packageName, 0)
+            context.packageManager.getApplicationLabel(applicationInfo).toString()
+        }.getOrDefault(packageName)
 
     /**
      * Checks if a package is installed on the system.
@@ -719,17 +781,15 @@ object LauncherRegistry {
      * 2. Installed launchers next (Direct apply first, then manual)
      * 3. Supported uninstalled launchers (Direct apply, manual, then alternatives)
      */
-    fun getLauncherStates(context: Context): List<LauncherRuntimeState> {
-        val defaultPkg = detectDefaultLauncherPackage(context)
-        return launchers.map { spec ->
-            val installedPkg = findInstalledPackage(context, spec)
-            val isInstalled = installedPkg != null
-            val isDefault = spec.packageNames.any { it == defaultPkg }
+    fun getRuntimeSnapshot(context: Context): LauncherRuntimeSnapshot {
+        val defaultPackage = detectDefaultLauncherPackage(context)
+        val launcherStates = launchers.map { spec ->
+            val installedPackage = findInstalledPackage(context, spec)
             LauncherRuntimeState(
                 spec = spec,
-                isInstalled = isInstalled,
-                isDefault = isDefault,
-                installedPackage = installedPkg
+                isInstalled = installedPackage != null,
+                isDefault = spec.packageNames.any { it == defaultPackage },
+                installedPackage = installedPackage
             )
         }.sortedWith(
             compareByDescending<LauncherRuntimeState> { it.isDefault }
@@ -743,7 +803,11 @@ object LauncherRegistry {
                 }
                 .thenBy { it.spec.name }
         )
+        return LauncherRuntimeSnapshot(defaultPackage, launcherStates)
     }
+
+    fun getLauncherStates(context: Context): List<LauncherRuntimeState> =
+        getRuntimeSnapshot(context).launchers
 
     /**
      * Triggers the direct apply mechanism for supported launchers.

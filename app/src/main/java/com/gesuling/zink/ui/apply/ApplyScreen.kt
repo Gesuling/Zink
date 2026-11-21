@@ -56,6 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -156,31 +157,30 @@ private fun openGooglePlayListing(context: Context, httpsUrl: String) {
 }
 
 @Composable
-fun ApplyScreen() {
+fun ApplyScreen(launcherRefreshVersion: Int = 0) {
     val context = LocalContext.current
     val colors = LocalZinkColors.current
 
-    val launcherStates = remember { LauncherRegistry.getLauncherStates(context) }
+    var launcherSnapshot by remember(context) {
+        mutableStateOf(LauncherRegistry.getRuntimeSnapshot(context))
+    }
+    val launcherStates = launcherSnapshot.launchers
+    val defaultLauncherPkg = launcherSnapshot.defaultHomePackage
     var selectedLauncher by remember { mutableStateOf<LauncherRuntimeState?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }
 
-    val defaultLauncherState = remember(launcherStates) {
-        launcherStates.firstOrNull { it.isDefault }
-    }
+    val defaultLauncherState = launcherStates.firstOrNull { it.isDefault }
+    val defaultLauncherName = defaultLauncherPkg?.let {
+        LauncherRegistry.getApplicationLabel(context, it)
+    } ?: "No default HOME launcher selected"
 
-    val defaultLauncherPkg = remember { LauncherRegistry.detectDefaultLauncherPackage(context) }
-    val defaultLauncherName = remember(defaultLauncherState, defaultLauncherPkg) {
-        defaultLauncherState?.spec?.name
-            ?: defaultLauncherPkg?.let { pkg ->
-                try {
-                    val appInfo = context.packageManager.getApplicationInfo(pkg, 0)
-                    context.packageManager.getApplicationLabel(appInfo).toString()
-                } catch (_: Exception) {
-                    pkg
-                }
-            }
-            ?: "Unknown Launcher"
+    LaunchedEffect(launcherRefreshVersion) {
+        val refreshedSnapshot = LauncherRegistry.getRuntimeSnapshot(context)
+        launcherSnapshot = refreshedSnapshot
+        selectedLauncher = selectedLauncher?.let { selected ->
+            refreshedSnapshot.launchers.firstOrNull { it.spec.id == selected.spec.id } ?: selected
+        }
     }
 
     // Filter and search logic
@@ -269,30 +269,31 @@ fun ApplyScreen() {
                                 developer = "Device System",
                                 packageNames = listOf(defaultLauncherPkg),
                                 playStoreUrl = null,
-                                applyMethod = ApplyMethod.MANUAL,
-                                tagline = "Unlisted launcher detected as system default",
+                                applyMethod = ApplyMethod.ALTERNATIVE,
+                                tagline = "Unlisted default launcher; ZINK integration is not verified",
                                 supportedVersions = "Current device firmware",
                                 requirements = listOf("Default launcher active on device"),
-                                settingsPath = listOf("Home Screen (Long-press)", "Settings / Customisation", "Icon pack", "Select ZINK"),
+                                settingsPath = listOf("Install a compatible third-party launcher", "Set it as the default HOME app", "Select ZINK in its icon settings"),
                                 setupSteps = listOf(
-                                    "Open $defaultLauncherName settings or long-press an empty home screen space.",
-                                    "Locate the Home Screen, Appearance, or Customization section.",
-                                    "Look for an Icon Pack or Icon Theme setting.",
-                                    "If third-party icon packs are supported, select ZINK from the list."
+                                    "$defaultLauncherName is detected as the selected HOME app, but ZINK has no verified icon-pack integration for it.",
+                                    "Install a launcher with ZINK icon-pack support, such as Nova, Niagara, Smart Launcher, or Lawnchair.",
+                                    "Set that launcher as the default HOME app in Android Settings.",
+                                    "Open its icon settings and select ZINK."
                                 ),
                                 limitations = listOf(
-                                    "This launcher is not pre-cataloged in ZINK's verified compatibility repository.",
-                                    "System launchers (such as stock Pixel or ColorOS) may only allow custom icons via dedicated apps or shortcut tools."
+                                    "This launcher is not in ZINK's curated launcher registry, so compatibility is unknown.",
+                                    "ZINK cannot confirm that it accepts standard Android icon-pack metadata."
                                 ),
                                 troubleshooting = listOf(
-                                    "If third-party icon packs are not supported, consider switching to Nova Launcher, Niagara, or Lawnchair."
+                                    "If this launcher does not list ZINK as an icon pack, switch to a launcher with a verified ZINK integration."
                                 ),
+                                unavailableMessage = "No verified ZINK icon-pack integration for this launcher. Use a compatible third-party launcher.",
                                 verification = VerificationSource(
                                     url = "https://source.android.com/",
                                     sourceType = "System Package Manager Resolution",
                                     dateChecked = "2026-11-21",
                                     evidence = "Detected via Android CATEGORY_HOME package resolution at runtime.",
-                                    confidence = ConfidenceLevel.COMMUNITY_VERIFIED
+                                    confidence = ConfidenceLevel.UNVERIFIED
                                 )
                             ),
                             isInstalled = true,
@@ -451,8 +452,8 @@ private fun DefaultLauncherHeroCard(
     val methodText = when (state?.spec?.applyMethod) {
         ApplyMethod.DIRECT -> "Direct 1-Tap Apply Supported"
         ApplyMethod.MANUAL -> "Supported via Launcher Customisation"
-        ApplyMethod.ALTERNATIVE -> "Limited · Companion App or Alternative Required"
-        null -> "Detected Default · Tap Guide to Check Compatibility"
+        ApplyMethod.ALTERNATIVE -> "No direct ZINK integration · Compatible alternative required"
+        null -> "No verified icon-pack integration · Tap for alternatives"
     }
 
     val badgeColor = when (state?.spec?.applyMethod) {
@@ -516,6 +517,15 @@ private fun DefaultLauncherHeroCard(
                     color = badgeColor,
                     fontSize = 11.sp
                 )
+                if (packageName != null) {
+                    Text(
+                        text = packageName,
+                        color = Muted,
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 

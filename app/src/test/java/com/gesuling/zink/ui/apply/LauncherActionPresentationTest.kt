@@ -18,8 +18,8 @@ class LauncherActionPresentationTest {
     }
 
     @Test
-    fun allThirteenLaunchersHaveAnActionOrAvailabilityNotice() {
-        assertEquals(13, LauncherRegistry.launchers.size)
+    fun allRegisteredLaunchersHaveAnActionOrAvailabilityNotice() {
+        assertEquals(14, LauncherRegistry.launchers.size)
 
         LauncherRegistry.launchers.forEach { spec ->
             val actions = state(spec.id).actionPresentation
@@ -60,6 +60,15 @@ class LauncherActionPresentationTest {
             assertEquals("VIEW ON GOOGLE PLAY", installedActions.sourceActionLabel)
             assertNotNull(installedActions.openActionLabel)
         }
+    }
+
+    @Test
+    fun xiaomiSystemLauncherIsDetectedAsAlternativeWithoutDirectApply() {
+        val xiaomi = LauncherRegistry.launchers.single { it.id == "xiaomi_system" }
+        assertEquals(listOf("com.miui.home"), xiaomi.packageNames)
+        assertEquals(ApplyMethod.ALTERNATIVE, xiaomi.applyMethod)
+        assertNotNull(xiaomi.unavailableMessage)
+        assertNull(xiaomi.directApplyAction)
     }
 
     @Test

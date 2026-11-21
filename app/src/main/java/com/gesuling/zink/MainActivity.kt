@@ -5,6 +5,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -61,7 +64,7 @@ import com.gesuling.zink.ui.wallpapers.sampleWallpapers
 
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
-
+cd C:\Users\LENOVO\Documents\Zink
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,6 +112,15 @@ fun ZinkHomeScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var headerArtwork by remember { mutableStateOf(ZinkPreferences.getHeaderArtwork(context)) }
+    var launcherRefreshVersion by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = context as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) launcherRefreshVersion++
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
 
     val colors = LocalZinkColors.current
 
@@ -133,7 +145,12 @@ fun ZinkHomeScreen(
                     },
                     isPureAmoled = isPureAmoled,
                     onPuroAmoledChange = onPureAmoledChange,
-                    onBackClick = { isSettingsOpen = false }
+                    onBackClick = { isSettingsOpen = false },
+                    launcherRefreshVersion = launcherRefreshVersion,
+                    onApplyToLauncherClick = {
+                        selectedTab = 3
+                        isSettingsOpen = false
+                    }
                 )
                 GlassmorphicBottomNavigation(
                     tabs = tabs,
@@ -187,7 +204,7 @@ fun ZinkHomeScreen(
                                 WallpapersScreen()
                             }
                             3 -> {
-                                ApplyScreen()
+                                ApplyScreen(launcherRefreshVersion)
                             }
                             4 -> {
                                 RequestsScreen()

@@ -1,5 +1,8 @@
 package com.gesuling.zink.ui.settings
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -27,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gesuling.zink.ui.anim.glowingBorderOnPress
 import com.gesuling.zink.ui.anim.pressScale
+import com.gesuling.zink.ui.apply.LauncherRegistry
 import com.gesuling.zink.ui.theme.LocalZinkColors
 import com.gesuling.zink.ui.wallpapers.WallpaperDownloadQuality
 import com.gesuling.zink.ui.wallpapers.WallpaperQualityPreferences
@@ -34,17 +38,31 @@ import com.gesuling.zink.ui.wallpapers.WallpaperQualityPreferences
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
 
+private fun currentDefaultLauncherSummary(context: Context): String {
+    val packageName = LauncherRegistry.detectDefaultLauncherPackage(context)
+        ?: return "No default HOME launcher selected"
+    return "${LauncherRegistry.getApplicationLabel(context, packageName)} · $packageName"
+}
+
 @Composable
 fun SettingsScreen(
     headerArtwork: String,
     onHeaderArtworkChange: (String) -> Unit,
     isPureAmoled: Boolean,
     onPuroAmoledChange: (Boolean) -> Unit,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onApplyToLauncherClick: () -> Unit,
+    launcherRefreshVersion: Int = 0
 ) {
     val context = LocalContext.current
     val colors = LocalZinkColors.current
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    var currentLauncherSummary by remember(context) {
+        mutableStateOf(currentDefaultLauncherSummary(context))
+    }
+    LaunchedEffect(launcherRefreshVersion) {
+        currentLauncherSummary = currentDefaultLauncherSummary(context)
+    }
 
     var wallpaperQuality by remember {
         mutableStateOf(WallpaperQualityPreferences.get(context))
@@ -231,12 +249,13 @@ fun SettingsScreen(
                 // Row 1: Apply to Launcher
                 SettingsClickableRow(
                     title = "Apply to Launcher",
-                    subtitle = "Nothing Launcher (Detected)",
+                    subtitle = currentLauncherSummary,
                     trailing = {
                         Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Muted)
                     },
                     onClick = {
-                        Toast.makeText(context, "Opening Launcher Apply Options...", Toast.LENGTH_SHORT).show()
+                        currentLauncherSummary = currentDefaultLauncherSummary(context)
+                        onApplyToLauncherClick()
                     }
                 )
 
@@ -322,7 +341,14 @@ fun SettingsScreen(
                             color = Silver,
                             fontSize = 12.sp,
                             textDecoration = TextDecoration.Underline,
-                            modifier = Modifier.clickable(onClick = {})
+                            modifier = Modifier.clickable {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("https://github.com/Gesuling/Zink")
+                                    )
+                                )
+                            }
                         )
                     }
                 }
@@ -422,6 +448,7 @@ fun SettingsScreenPreview() {
         onHeaderArtworkChange = {},
         isPureAmoled = false,
         onPuroAmoledChange = {},
-        onBackClick = {}
+        onBackClick = {},
+        onApplyToLauncherClick = {}
     )
 }
