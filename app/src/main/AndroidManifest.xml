@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackages" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <!-- Launcher packages for icon-pack compatibility detection -->
+        <package android:name="com.nothing.launcher" />
+        <package android:name="com.teslacoilsw.launcher" />
+        <package android:name="bitpit.launcher" />
+        <package android:name="ginlemon.flowerfree" />
+        <package android:name="com.actionlauncher.playstore" />
+        <package android:name="app.lawnchair" />
+        <package android:name="ch.deletescape.lawnchair.ci" />
+        <package android:name="ch.deletescape.lawnchair" />
+        <package android:name="projekt.launcher" />
+        <package android:name="com.anddoes.launcher" />
+        <package android:name="org.adw.launcher" />
+        <package android:name="org.adwfreak.launcher" />
+        <package android:name="com.microsoft.launcher" />
+        <package android:name="de.mm20.launcher2.release" />
+        <package android:name="com.google.android.apps.nexuslauncher" />
+        <package android:name="com.sec.android.app.launcher" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Zink">
+
+        <!-- Icon Pack Metadata for Launcher Theme Discovery -->
+        <meta-data
+            android:name="org.adw.launcher.THEMES"
+            android:resource="@xml/appfilter" />
+        <meta-data
+            android:name="com.novalauncher.THEME"
+            android:resource="@xml/appfilter" />
+        <meta-data
+            android:name="com.teslacoilsw.launcher.THEME"
+            android:resource="@xml/appfilter" />
+        <meta-data
+            android:name="com.anddoes.launcher.THEME"
+            android:resource="@xml/appfilter" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Zink"
+            android:windowSoftInputMode="adjustResize">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Launcher Theme Discovery Intent Filters (Nothing OS, Nova, Lawnchair, Smart, ADW, Apex, Go) -->
+            <intent-filter>
+                <action android:name="com.novalauncher.THEME" />
+                <action android:name="com.teslacoilsw.launcher.THEME" />
+                <action android:name="org.adw.launcher.THEMES" />
+                <action android:name="com.anddoes.launcher.THEME" />
+                <action android:name="com.gau.go.launcherex.theme" />
+                <action android:name="ch.deletescape.lawnchair.ICONPACK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="com.anddoes.launcher.THEME" />
+                <category android:name="org.adw.launcher.THEMES" />
+                <category android:name="com.novalauncher.THEME" />
+                <category android:name="com.gau.go.launcherex.theme" />
+                <category android:name="android.intent.category.THEME_SCENE" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="org.adw.launcher.icons.ACTION_PICK_ICON" />
+                <action android:name="com.novalauncher.category.CUSTOM_ICON_PICKER" />
+                <action android:name="ch.deletescape.lawnchair.PICK_ICON" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

@@ -1,0 +1,38 @@
+
+# ===================================
+# ZINK - Android Project
+# ===================================
+
+# Gradle
+.gradle/
+**/build/
+
+# Android Studio
+*.iml
+.idea/
+!.idea/codeStyles/
+!.idea/runConfigurations/
+
+# Local Android configuration
+local.properties
+
+# Signing credentials - NEVER UPLOAD
+*.jks
+*.keystore
+keystore.properties
+
+# Build outputs
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Logs
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Temporary development artifacts
+.artifacts/
+

@@ -1,0 +1,133 @@
+# ZINK project guide
+
+This guide records the implementation visible in the current source tree for future contributors and coding agents. Source code is authoritative if this document gets stale. Keep this file updated when architecture, behavior, assets, permissions, or build setup changes. Distinguish shipped behavior from incomplete behavior and proposals.
+
+## Product and module
+
+ZINK is an Android icon pack and customization companion. It provides a catalog of custom app icons, launcher compatibility/apply guidance, bundled wallpapers, an icon request composer, and appearance settings. The Gradle project has one Android application module, :app, with package/namespace com.gesuling.zink.
+
+## Architecture and technologies
+
+- Kotlin with Jetpack Compose and Material 3, hosted by one ComponentActivity in MainActivity.kt.
+- Top-level destinations are composed in MainActivity.kt; tab transitions use Compose AnimatedContent. Settings is opened as a full-screen branch from Home rather than a bottom tab.
+- Feature UI and much of its static data/state are colocated by feature. There is no formal ViewModel/repository/DI/database/navigation-library layer in the current implementation.
+- Shared palette/theme code is in ui/theme. ZinkPreferences persists Pure AMOLED Black and the selected Home Header Artwork through SharedPreferences. Wallpaper download quality and favourite wallpaper IDs also use SharedPreferences. Other screen selections and form state still use ordinary remember state.
+- Interaction modifiers and natural-order sorting are in ui/anim/AnimationUtils.kt.
+- Dependencies and Android build versions are managed by Gradle Kotlin DSL and gradle/libs.versions.toml. Current values: AGP 9.5.1, Kotlin 2.2.10, Compose BOM 2026.02.01. app/build.gradle.kts declares minSdk 26, compileSdk 37, targetSdk 37, Java compatibility 11.
+- The project follows Kotlin official style. Keep feature code in the existing feature packages unless a change has a clear architectural reason.
+
+### Navigation and main shell
+
+Bottom destinations, in order: Home, Icons, Wallpapers, Apply, Requests. Home has summary cards and Explore rows leading to Icons, Wallpapers, Apply, and Settings. Settings is not in the bottom bar; its header gear and Explore row both open it. Selecting another tab replaces the current screen content with an animated transition. Per-screen state is generally not saveable and should be assumed to reset when the screen leaves composition or the Activity is recreated, except for explicitly persisted AMOLED preference and process-global objects such as wallpaper favorites/cache.
+
+MainActivity enables edge-to-edge, makes the navigation bar transparent, and uses a rounded glass-like bottom navigation. Insets/padding are handled locally by the screens. Settings keeps its title/subtitle fixed above its vertically scrolling sections; the glass bottom navigation remains visible while Settings is open, and selecting a tab closes Settings. Apply keeps its title/subtitle and Current Default Launcher card fixed while search, filters, results heading/count, and launcher cards scroll in a separate viewport. Both scroll viewports reserve space above the bottom navigation.
+
+## Visual style
+
+The current visual direction is dark and iGlassOS-inspired: graphite/black surfaces, optional pure-black background, silver/white primary type, muted gray labels, thin translucent borders, rounded surfaces, compact letter-spaced headings, subtle scale feedback and restrained motion. The palette is available through LocalZinkColors, although screens also define their own constants. The UI is currently phone-oriented and relies on fixed dp grids/spacings; there is no adaptive multi-pane behavior.
+
+Preserve readable contrast, the dark glass/metal hierarchy, modest motion, and edge-to-edge handling when changing UI. Existing feedback helpers are in ui/anim/AnimationUtils.kt.
+
+## Important paths
+
+| Path | Current role |
+| --- | --- |
+| app/src/main/java/com/gesuling/zink/MainActivity.kt | Activity setup, theme preference binding, Home, tabs and Settings entry. |
+| app/src/main/java/com/gesuling/zink/ui/icons/IconsScreen.kt | Static icon data, search/category filters, grid and detail dialog. |
+| app/src/main/java/com/gesuling/zink/ui/wallpapers/WallpapersScreen.kt | Wallpaper list, favorites state, bitmap cache, preview, download and application. |
+| app/src/main/java/com/gesuling/zink/ui/apply/ApplyScreen.kt | Default launcher summary, filters, cards and detail/setup sheet. |
+| app/src/main/java/com/gesuling/zink/ui/apply/LauncherRegistry.kt | Launcher records, package/default detection, intent metadata and direct apply dispatch. |
+| app/src/main/java/com/gesuling/zink/ui/requests/RequestsScreen.kt | Launcher activity discovery, themed/unthemed/manual request modes and email composition. |
+| app/src/main/java/com/gesuling/zink/ui/settings/SettingsScreen.kt | Appearance, launcher, storage and about rows. |
+| app/src/main/java/com/gesuling/zink/ui/theme/Color.kt | ZinkColors, CompositionLocals and SharedPreferences-backed AMOLED preference. |
+| app/src/main/java/com/gesuling/zink/ui/theme/Theme.kt and Type.kt | Material theme wrapper and typography. |
+| app/src/main/java/com/gesuling/zink/ui/anim/AnimationUtils.kt | Press animation, border effect and NaturalOrderComparator. |
+| app/src/main/AndroidManifest.xml | Permissions, package queries, activity and launcher pack discovery declarations. |
+| app/src/main/assets/{appfilter.xml,drawable.xml,themecfg.xml,themeinfo.xml} | Asset-form icon-pack definitions. |
+| app/src/main/res/xml/{appfilter.xml,drawable.xml,themecfg.xml,themeinfo.xml} | Resource-form pack definitions; manifest metadata points at these resources. |
+| app/src/main/res/drawable-nodpi/ | Custom icon PNGs, wallpaper resources/thumbs and header art. |
+| app/src/main/res/mipmap-*/ and res/drawable/ | Launcher icon variants and adaptive icon layers. |
+| app/build.gradle.kts and gradle/libs.versions.toml | Android configuration, dependencies and version catalog. |
+| app/src/test and app/src/androidTest | Wallpaper output-dimension unit tests, an instrumentation test for saved quality and Android bitmap decoding, plus generated smoke tests; no general UI test suite. |
+
+## Implemented functionality
+
+### Home and Settings
+
+Home displays ZINK branding, header art, icon/wallpaper/favorite counts, and navigation rows. Header art options are Frieren (first-time default), Obsidian, and Nocturne. ZinkPreferences stores the selected stable artwork ID in SharedPreferences; unknown or removed IDs safely resolve to Frieren. Settings updates this shared Home state immediately, and the selection is restored when the app starts.
+
+Pure AMOLED Black changes the background palette and is persisted with SharedPreferences through ZinkPreferences. Wallpaper Download Quality is also stored in SharedPreferences; the default is 4K Original (the bundled source dimensions). FHD 1080p limits downloaded images to a 1920×1080 landscape or 1080×1920 portrait box without upscaling smaller assets. Settings also presents Icon Masking, Apply to Launcher, Clear Icon Cache, App Version, and Developer Info. Several are currently decorative or local-only; see known bugs below.
+
+### Icons and launcher pack
+
+IconsScreen has 84 static AppIconItem records, searchable by app name, package, and category, with category chips, a 3-column grid and a detail dialog that copies the package name. Catalog data is in IconsScreen.kt.
+
+The launcher pack uses resource-nodpi PNGs and XML metadata. The appfilter mapping uses explicit ComponentInfo package/activity names and custom drawable names. Both appfilter.xml copies contain a static `<scale factor="0.74" />` fallback rule; they do not define iconmask, iconback, or iconupon artwork. This scale can affect generated fallback icons only in launchers that implement those rules; it does not apply a dark monochrome frame to ZINK's custom icons. Settings presents this fixed value as information, not as a toggle. drawable.xml enumerates icon drawables. Matching definitions are duplicated under assets and res/xml; preserve parity when editing.
+
+The manifest registers ADW, Nova/Tesla, and Apex metadata resources and theme/icon picker intent filters. Filters include Nova/Tesla, ADW, Apex, Go, Lawnchair, and custom icon picker actions. These declarations are compatibility hooks; their presence does not establish tested behavior on every launcher/version. App launcher art also includes legacy mipmap assets and adaptive icon XML/layers, including monochrome variants.
+
+When adding an icon, coordinate the PNG/resource name, IconsScreen catalog record, appfilter mapping, drawable catalog, and both assets/res XML copies. Verify exact package/activity identifiers. A UI catalog entry alone does not ensure launcher application.
+
+Fallback scaling is launcher-controlled: Kvaesitso's official icon-pack documentation describes generated fallback icon support including scale and mask elements. Lawnchair's current icon-pack documentation says generated fallback icons are not implemented. Smart Launcher masking and Niagara's icon-shape behavior are launcher-owned controls; neither is connected to ZINK Settings. Treat Nova/ADW/Apex support for this fallback scale as version-dependent unless verified against the particular launcher version. References: [Kvaesitso icon-pack docs](https://github.com/MM2-0/Kvaesitso/blob/main/docs/docs/developer-guide/integrations/icon-packs.md), [Lawnchair icon-pack docs](https://github.com/LawnchairLauncher/docs/blob/main/developers/concepts/icon-packs.md), [Niagara icon-shape help](https://help.niagaralauncher.app/article/153-new-icon-shape-picker).
+
+### Wallpapers
+
+The static catalog in WallpapersScreen.kt contains 43 WallpaperItem records with ID, title, category, full-size resource ID, and thumbnail resource ID. Image resources are under app/src/main/res/drawable-nodpi/; names include wp_* and thumb_* with JPG, PNG, or WebP assets. Header art is also there. The app/src/main/assets/wallpapers directory exists, but current catalog references R.drawable resources; do not assume that directory is used.
+
+Implemented interactions include a 2-column catalog with an All Wallpapers/Favourites filter, full-screen preview, pan/zoom, Fit/Original/Fill fit choices, reset, favorite toggles, download into Pictures/Zink using MediaStore with a file fallback, and applying to Home, Lock, or both with WallpaperManager. The Favourites filter reads FavouritesManager's persisted snapshot state and immediately reflects toggles; its empty state explains how to save a wallpaper. Home's favorite count observes the same state. Download quality is read when the user downloads: 4K Original decodes the full bundled resource, while FHD 1080p bounds decoding and scales the JPEG output to fit within 1920×1080 landscape or 1080×1920 portrait dimensions, preserving aspect ratio and never upscaling. Thumbnail bitmaps use an LRU cache. There is no remote wallpaper feed.
+
+Favorites live in a process-global Compose mutableStateSetOf for immediate UI synchronization, and their stable wallpaper IDs are persisted in SharedPreferences. MainActivity restores the IDs against the current wallpaper catalog before composing Home, so counts, favorite icons, and the Wallpapers list begin in sync after restart. Unknown or malformed saved IDs are hidden from the current catalog but preserved when another favorite is toggled, allowing saved IDs to become visible again if the catalog entry returns. The bitmap cache remains in-memory.
+
+### Apply and launcher registry
+
+ApplyScreen detects the resolved CATEGORY_HOME package, matches it against LauncherRegistry entries, labels installed/default status, orders default and installed launchers first, provides search and filters (All, Direct Apply, Manual Setup, Installed, System & Others), and opens detailed setup sheets. The fixed header includes the current-default launcher card; the searchable/filterable launcher list scrolls below it. The detail sheet's Actions section is derived from LauncherRuntimeState.actionPresentation: installed launchers get a launcher-specific OPEN action and a source link when available; uninstalled launchers get INSTALL FROM GOOGLE PLAY or DOWNLOAD FROM GITHUB; device-restricted entries show a warning; entries with no source show an availability notice. Installed direct-apply launchers also retain their 1-Tap Apply button. Play actions use package-specific market://details intents with HTTPS fallback; GitHub URLs open through ACTION_VIEW. These are outbound listing links only, and ZINK does not install apps. The 11 Play links cover Action, ADW, Apex, Lawnchair, Microsoft, Niagara, Nothing, Nova, Samsung One UI Home, Smart Launcher, and Hyperion. Kvaesitso links to its official GitHub Releases page. Pixel Launcher intentionally has no standalone installation URL and shows its preinstalled/device-restriction explanation. Google Play may still apply its own region/device compatibility restrictions. The count text says “VERIFIED” for the filtered list; it must not be read as a uniform verification grade.
+
+LauncherRegistry currently has 13 named entries: Nova, Niagara, Smart Launcher, Action, ADW, Apex, Nothing, Lawnchair, Hyperion, Microsoft, Kvaesitso, Samsung One UI, and Google Pixel. ApplyMethod distinguishes DIRECT, MANUAL, ALTERNATIVE. Each LauncherSpec includes package variants, steps/settings path, requirements, limitations/troubleshooting, optional Google Play or GitHub Releases source, optional device restriction/unavailability messages, and a VerificationSource (URL, sourceType, checked date, evidence, confidence). LauncherRuntimeState.actionPresentation centralizes installed/uninstalled action labels and the fallback availability message so every registry entry has a visible Actions outcome. Launcher card, detail, and default-launcher surfaces show each installed launcher's PackageManager application icon when available; otherwise they decode that launcher's bundled fallback image from app/src/main/assets/launcher_icon_<id>.png.b64. Source provenance and licensing notes are in app/src/main/assets/launcher_icon_sources.md. The Pixel fallback is from an archived package listing; ADW and Apex fallbacks derive from MaterialOS artwork. Keep the per-ID asset names aligned with LauncherRegistry IDs.
+
+If the current default launcher is not in the catalog, ApplyScreen creates a generic manual guide at runtime for that package; it is not a curated registry record. If registry entries are changed, update package visibility declarations as needed.
+
+Direct apply creates an Intent using the registry action, constrains it to a package, adds configured extras, and calls Context.startActivity. On ActivityNotFoundException it tries to open the launcher app and asks the user to finish selection manually. Other exceptions return false. This behavior must be tested against the actual launcher/version before making stronger claims.
+
+Registry source URLs, evidence descriptions, confidence, dateChecked, and optional installation source URLs are static records in code, not fetched or live-validated. The ADW Play page is currently available at its exact package listing; Lawnchair's current Play package is app.lawnchair.play; Kvaesitso publishes its APK releases at the official GitHub Releases URL. Verify listing package and developer before changing these records. Revisit first-party documentation/source code before publishing or upgrading compatibility confidence. Avoid asserting broad compatibility based solely on intent filters or a configured URL.
+
+### Requests
+
+RequestsScreen has three modes: installed unthemed apps, already-themed catalog entries, and manual entry. It scans launchable activities and excludes packages present in the icon catalog; if the result is sparse, it attempts a broader installed-package scan, then uses bundled fallback entries if no results. Unthemed apps start unselected and users explicitly select each app to include. It supports search and selection, and builds an email addressed to gesuling@gmail.com for batch/manual submissions.
+
+Catalog request modes include a selected-count submit action. Generated emails include selected app names and package names for both unthemed and themed catalog requests; manual entry includes its name, package/link, and optional note. If email launch fails, the request text is copied to the clipboard when available, with a separate error message if copying also fails. There is no server-side submission or request history.
+
+### Manifest/package visibility
+
+Manifest declares SET_WALLPAPER and QUERY_ALL_PACKAGES (suppressed in lint tooling), launcher and HOME intent queries, and package queries for the named launcher packages. Requests app discovery depends on package visibility. Reassess the declared visibility and distribution requirements if changing discovery behavior or target SDK; this guide makes no policy determination.
+
+## Incomplete controls and known bugs
+
+- There is no dynamic icon-masking preference. Settings shows the static 0.74 fallback scale as informational text; the app cannot toggle how another launcher consumes its packaged appfilter metadata.
+- Settings > Apply to Launcher only displays a toast and does not navigate to Apply.
+- Settings > Clear Icon Cache only displays a toast. It does not clear WallpaperBitmapCache or another cache.
+- Settings > App Version is hard-coded as v1.0.0 (API 37); app Gradle version currently is versionName 1.0, versionCode 1. This can drift.
+- Request selections/form values, filters, and other transient UI state are not durable across process death. Pure AMOLED, wallpaper download quality, wallpaper favorite IDs, and Home Header Artwork selection are persisted.
+
+- Launcher registry records and guides are curated static data. Some source/claim details can become outdated, and UI's “VERIFIED” count overstates a single confidence meaning.
+- Automated coverage remains limited: wallpaper output dimensions, saved wallpaper quality, bitmap decoding, favorite ID persistence/restoration and stale-ID handling, header artwork default/restoration/fallback, and packaged Lawnchair/Kvaesitso launcher icon decoding have targeted tests; most other feature flows are not covered. The generated arithmetic and application-ID smoke tests remain.
+- The XML pack declarations have copies in both assets and res/xml; drift can cause inconsistent discovery/application.
+
+No explicit roadmap is recorded. Do not describe proposed fixes or features as planned unless a product owner confirms them in project artifacts. Useful next work is prioritized in PROJECT_STATUS.md.
+
+## Build and verification
+
+Use the project wrapper from its root:
+
+- Windows: ./gradlew.bat assembleDebug
+- Local unit tests: ./gradlew.bat test
+- Device tests: ./gradlew.bat connectedAndroidTest (requires configured device/emulator)
+
+Recent launcher Actions verification: `./gradlew.bat test --max-workers=1` passed, including 13 LauncherActionPresentationTest cases covering all 13 registry entries; `./gradlew.bat assembleDebug` passed; the resulting APK installed successfully on the connected device. Nothing and Samsung restriction/action rows were visually checked on-device. A Play listing handoff did not remain visible, and the other launcher detail screens and external GitHub handoff were not manually verified on this device. Earlier persisted wallpaper favorites/header-art verification also passed unit tests, `assembleDebug`, and `connectedAndroidTest --max-workers=1` on device A069P (Android 17); that instrumentation reloads preferences after clearing in-memory state but does not automate a user-driven force-stop/relaunch. The project uses Kotlin official style, Kotlin DSL, and a Gradle version catalog. Preserve user-visible behavior unless asked to change it. When adding state, specify whether it should survive recomposition, navigation/tab changes, Activity recreation, or process restart.
+
+## Repository history
+
+At the previous inspection, Git commands from the project root returned “not a git repository”; no usable commit history was available. Current code establishes implementation, not the rationale or chronology behind earlier decisions. Do not invent those details.
+
+## Maintaining this guide
+
+Update the relevant sections in the same change as modifications to tabs, architecture, permissions, launcher metadata/guides, persistence, assets, build settings, or behavior. Keep status factual and concise. If the source does not establish a feature, say that it is unknown rather than infer it.
