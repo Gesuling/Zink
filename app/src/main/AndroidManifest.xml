@@ -22,11 +22,15 @@
         <package android:name="bitpit.launcher" />
         <package android:name="ginlemon.flowerfree" />
         <package android:name="com.actionlauncher.playstore" />
+        <package android:name="app.lawnchair.play" />
         <package android:name="app.lawnchair" />
+        <package android:name="app.lawnchair.nightly" />
         <package android:name="ch.deletescape.lawnchair.ci" />
+        <package android:name="ch.deletescape.lawnchair.plah" />
         <package android:name="ch.deletescape.lawnchair" />
         <package android:name="projekt.launcher" />
         <package android:name="com.anddoes.launcher" />
+        <package android:name="com.home.launcher.apexlauncher" />
         <package android:name="org.adw.launcher" />
         <package android:name="org.adwfreak.launcher" />
         <package android:name="com.microsoft.launcher" />

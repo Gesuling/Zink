@@ -24,6 +24,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.max
+import kotlin.math.roundToInt
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -66,8 +71,10 @@ import com.gesuling.zink.ui.anim.glowingBorderOnPress
 import com.gesuling.zink.ui.anim.pressScale
 import androidx.core.graphics.drawable.toBitmap
 import com.gesuling.zink.ui.theme.LocalZinkColors
+import com.gesuling.zink.ui.components.ZinkPageHeader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 private val Silver = Color(0xFFF2F2F4)
 private val Muted = Color(0xFF7C7C82)
@@ -156,6 +163,42 @@ private fun openGooglePlayListing(context: Context, httpsUrl: String) {
     }
 }
 
+object ApplyStateManager {
+    private const val PREFS_NAME = "zink_apply_prefs"
+    private const val KEY_SEARCH_QUERY = "search_query"
+    private const val KEY_SELECTED_FILTER = "selected_filter"
+
+    var searchQuery by mutableStateOf("")
+    var selectedFilter by mutableStateOf("All")
+
+    fun restore(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        searchQuery = prefs.getString(KEY_SEARCH_QUERY, "") ?: ""
+        selectedFilter = prefs.getString(KEY_SELECTED_FILTER, "All") ?: "All"
+    }
+
+    fun setSearchQuery(context: Context, query: String) {
+        searchQuery = query
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SEARCH_QUERY, query)
+            .apply()
+    }
+
+    fun setSelectedFilter(context: Context, filter: String) {
+        selectedFilter = filter
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SELECTED_FILTER, filter)
+            .apply()
+    }
+
+    fun resetForTesting() {
+        searchQuery = ""
+        selectedFilter = "All"
+    }
+}
+
 @Composable
 fun ApplyScreen(launcherRefreshVersion: Int = 0) {
     val context = LocalContext.current
@@ -167,8 +210,8 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
     val launcherStates = launcherSnapshot.launchers
     val defaultLauncherPkg = launcherSnapshot.defaultHomePackage
     var selectedLauncher by remember { mutableStateOf<LauncherRuntimeState?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedFilter by remember { mutableStateOf("All") }
+    val searchQuery = ApplyStateManager.searchQuery
+    val selectedFilter = ApplyStateManager.selectedFilter
 
     val defaultLauncherState = launcherStates.firstOrNull { it.isDefault }
     val defaultLauncherName = defaultLauncherPkg?.let {
@@ -196,7 +239,7 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
                 "Direct Apply" -> state.spec.applyMethod == ApplyMethod.DIRECT
                 "Manual Setup" -> state.spec.applyMethod == ApplyMethod.MANUAL
                 "Installed" -> state.isInstalled
-                "System & Others" -> state.spec.applyMethod == ApplyMethod.ALTERNATIVE
+                "System & Others" -> state.spec.applyMethod == ApplyMethod.ALTERNATIVE || state.spec.applyMethod == ApplyMethod.UNVERIFIED
                 else -> true
             }
 
@@ -214,32 +257,13 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(Modifier.height(8.dp))
-
-            // ── Top Header ──
-            Text(
-                text = "APPLY",
-                color = Silver,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Light,
-                letterSpacing = 4.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ZinkPageHeader(
+                title = "APPLY",
+                subtitle = "LAUNCHER COMPATIBILITY & SETUP HUB"
             )
-
             Spacer(Modifier.height(4.dp))
-
-            Text(
-                text = "LAUNCHER COMPATIBILITY & SETUP HUB",
-                color = Muted,
-                fontSize = 10.sp,
-                letterSpacing = 2.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(Modifier.height(24.dp))
 
             // ── Prominent Default Launcher Hero Card ──
             DefaultLauncherHeroCard(
@@ -316,8 +340,8 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
             // ── Search & Filter Controls ──
             LauncherSearchBar(
                 query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                onClear = { searchQuery = "" }
+                onQueryChange = { ApplyStateManager.setSearchQuery(context, it) },
+                onClear = { ApplyStateManager.setSearchQuery(context, "") }
             )
 
             Spacer(Modifier.height(12.dp))
@@ -339,7 +363,7 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
                                 color = if (isSelected) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
                                 shape = RoundedCornerShape(12.dp)
                             )
-                            .clickable { selectedFilter = filter }
+                            .clickable { ApplyStateManager.setSelectedFilter(context, filter) }
                             .padding(horizontal = 14.dp, vertical = 7.dp)
                     ) {
                         Text(
@@ -354,27 +378,40 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
 
             Spacer(Modifier.height(24.dp))
 
-            // ── Section Title & Count ──
-            Row(
+            // ── Section Title & Granular Confidence Summary ──
+            val confidenceBreakdown = remember(filteredLaunchers) {
+                LauncherRegistry.getConfidenceBreakdown(filteredLaunchers)
+            }
+
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 4.dp)
             ) {
-                Text(
-                    text = "SUPPORTED LAUNCHERS",
-                    color = Muted,
-                    fontSize = 11.sp,
-                    letterSpacing = 2.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = "${filteredLaunchers.size} VERIFIED",
-                    color = Muted,
-                    fontSize = 10.sp,
-                    letterSpacing = 1.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "SUPPORTED LAUNCHERS",
+                        color = Muted,
+                        fontSize = 11.sp,
+                        letterSpacing = 2.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "${filteredLaunchers.size} TOTAL",
+                        color = Muted,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp
+                    )
+                }
+
+                if (filteredLaunchers.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    LauncherConfidenceBadgesRow(confidenceBreakdown = confidenceBreakdown)
+                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -438,6 +475,46 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
     }
 }
 
+// ─── Launcher Confidence Badges Row ───
+
+@Composable
+private fun LauncherConfidenceBadgesRow(
+    confidenceBreakdown: LauncherRegistry.ConfidenceBreakdown,
+    modifier: Modifier = Modifier
+) {
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        confidenceBreakdown.counts.filter { it.value > 0 }.forEach { (level, count) ->
+            val badgeColor = when (level) {
+                ConfidenceLevel.VERIFIED_OFFICIAL_DOCS,
+                ConfidenceLevel.VERIFIED_SOURCE_CODE -> Color(0xFF6FBF8F)
+                ConfidenceLevel.VERIFIED_INTENT_SPEC,
+                ConfidenceLevel.COMMUNITY_VERIFIED -> Color(0xFFC4A872)
+                ConfidenceLevel.UNVERIFIED -> Muted
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(badgeColor.copy(alpha = 0.10f))
+                    .border(1.dp, badgeColor.copy(alpha = 0.22f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "$count ${level.shortLabel.uppercase()}",
+                    color = badgeColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.5.sp
+                )
+            }
+        }
+    }
+}
+
 // ─── Default Launcher Hero Card ───
 
 @Composable
@@ -450,9 +527,10 @@ private fun DefaultLauncherHeroCard(
     onViewGuide: () -> Unit
 ) {
     val methodText = when (state?.spec?.applyMethod) {
-        ApplyMethod.DIRECT -> "Direct 1-Tap Apply Supported"
-        ApplyMethod.MANUAL -> "Supported via Launcher Customisation"
-        ApplyMethod.ALTERNATIVE -> "No direct ZINK integration · Compatible alternative required"
+        ApplyMethod.DIRECT -> "Direct Apply Documented"
+        ApplyMethod.MANUAL -> "Manual Setup Required"
+        ApplyMethod.ALTERNATIVE -> "Alternative Required"
+        ApplyMethod.UNVERIFIED -> "Compatibility Unverified"
         null -> "No verified icon-pack integration · Tap for alternatives"
     }
 
@@ -460,6 +538,7 @@ private fun DefaultLauncherHeroCard(
         ApplyMethod.DIRECT -> Color(0xFF6FBF8F)
         ApplyMethod.MANUAL -> Color(0xFF8FA9C4)
         ApplyMethod.ALTERNATIVE -> Color(0xFFC4A872)
+        ApplyMethod.UNVERIFIED -> Muted
         null -> Silver
     }
 
@@ -665,6 +744,7 @@ private fun LauncherDirectoryCard(
         ApplyMethod.DIRECT -> Color(0xFF6FBF8F)
         ApplyMethod.MANUAL -> Color(0xFF8FA9C4)
         ApplyMethod.ALTERNATIVE -> Color(0xFFC4A872)
+        ApplyMethod.UNVERIFIED -> Muted
     }
 
     Row(
@@ -706,7 +786,10 @@ private fun LauncherDirectoryCard(
                     text = state.spec.name,
                     color = Silver,
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
 
                 if (state.isDefault) {
@@ -732,13 +815,14 @@ private fun LauncherDirectoryCard(
             Text(
                 text = state.spec.developer,
                 color = Muted,
-                fontSize = 11.sp
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
             Spacer(Modifier.height(4.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Method indicator
                 Box(
                     modifier = Modifier
                         .size(6.dp)
@@ -749,14 +833,22 @@ private fun LauncherDirectoryCard(
                 Text(
                     text = state.methodBadge,
                     color = methodColor,
-                    fontSize = 11.sp
-                )
-                Text(
-                    text = " · ${if (state.isInstalled) "Installed" else "Available"}",
-                    color = Muted,
-                    fontSize = 11.sp
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(Modifier.height(2.dp))
+
+            Text(
+                text = "${state.confidenceLabel} · ${state.availabilityLabel}",
+                color = Muted,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
         Spacer(Modifier.width(8.dp))
@@ -907,25 +999,14 @@ private fun VerticalStepList(
 
                         Spacer(Modifier.width(10.dp))
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            if (isLast) {
-                                Text(
-                                    text = "DESTINATION",
-                                    color = Silver,
-                                    fontSize = 8.sp,
-                                    letterSpacing = 1.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(Modifier.height(1.dp))
-                            }
-                            Text(
-                                text = step,
-                                color = if (isLast) Color.White else Silver,
-                                fontSize = 13.sp,
-                                fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
-                                lineHeight = 18.sp
-                            )
-                        }
+                        Text(
+                            text = step,
+                            color = if (isLast) Color.White else Silver,
+                            fontSize = 13.sp,
+                            fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -1019,9 +1100,13 @@ private fun LauncherDetailSheet(
 ) {
     val context = LocalContext.current
     val spec = state.spec
+    var launcherOpenNotice by remember(spec.id) { mutableStateOf<String?>(null) }
     val formattedIntent = remember(spec) {
         LauncherRegistry.formatIntentDetails(context, spec)
     }
+
+    val sheetOffset = remember { androidx.compose.animation.core.Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1045,6 +1130,7 @@ private fun LauncherDetailSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.88f)
+                    .offset { IntOffset(0, max(0f, sheetOffset.value).roundToInt()) }
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .background(Color(0xFF0E0E0E))
                     .border(
@@ -1064,7 +1150,36 @@ private fun LauncherDetailSheet(
             ) {
                 // Drag handle & Top Close Button Row
                 Spacer(Modifier.height(14.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { change, dragAmount ->
+                                    if (dragAmount > 0) {
+                                        change.consume()
+                                        coroutineScope.launch {
+                                            sheetOffset.snapTo((sheetOffset.value + dragAmount).coerceAtLeast(0f))
+                                        }
+                                    }
+                                },
+                                onDragEnd = {
+                                    coroutineScope.launch {
+                                        if (sheetOffset.value > 80f) {
+                                            onDismiss()
+                                        } else {
+                                            sheetOffset.animateTo(0f, androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
+                                        }
+                                    }
+                                },
+                                onDragCancel = {
+                                    coroutineScope.launch {
+                                        sheetOffset.animateTo(0f, androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
+                                    }
+                                }
+                            )
+                        }
+                ) {
                     Box(
                         modifier = Modifier
                             .width(40.dp)
@@ -1134,6 +1249,7 @@ private fun LauncherDetailSheet(
                                 ApplyMethod.DIRECT -> Color(0xFF6FBF8F)
                                 ApplyMethod.MANUAL -> Color(0xFF8FA9C4)
                                 ApplyMethod.ALTERNATIVE -> Color(0xFFC4A872)
+                                ApplyMethod.UNVERIFIED -> Muted
                             }
                             Text(
                                 text = state.methodBadge,
@@ -1157,19 +1273,22 @@ private fun LauncherDetailSheet(
                 Spacer(Modifier.height(8.dp))
                 InfoBox {
                     val methodTitle = when (spec.applyMethod) {
-                        ApplyMethod.DIRECT -> "1-Tap Direct Apply (Confirmed Intent)"
-                        ApplyMethod.MANUAL -> "Manual Setup via Launcher Settings"
+                        ApplyMethod.DIRECT -> "Direct Apply · Officially Documented"
+                        ApplyMethod.MANUAL -> "Manual Setup Required"
                         ApplyMethod.ALTERNATIVE -> "Alternative Integration Required"
+                        ApplyMethod.UNVERIFIED -> "Compatibility Unverified"
                     }
                     val methodDescription = when (spec.applyMethod) {
-                        ApplyMethod.DIRECT -> "ZINK can invoke this launcher's verified application intent directly to apply the full monochrome silver icon pack with zero manual steps."
-                        ApplyMethod.MANUAL -> "This launcher contains an in-app icon pack selector in its settings. Follow the verified navigation path below to select ZINK."
-                        ApplyMethod.ALTERNATIVE -> "This system launcher does not support direct third-party icon packs. Use the official companion method (e.g. Samsung Theme Park) or a compatible third-party launcher."
+                        ApplyMethod.DIRECT -> "ZINK sends this launcher's configured apply request. Follow any launcher confirmation shown; sending the request does not confirm successful application."
+                        ApplyMethod.MANUAL -> "Follow the launcher-specific settings steps below to select ZINK manually. The OPEN action can launch the app when installed."
+                        ApplyMethod.ALTERNATIVE -> "ZINK has no verified standard icon-pack integration for this system launcher. Follow the alternative guidance below."
+                        ApplyMethod.UNVERIFIED -> "Available evidence does not establish a working ZINK icon-pack method for this launcher. Do not treat installation or detection as compatibility."
                     }
                     val methodColor = when (spec.applyMethod) {
                         ApplyMethod.DIRECT -> Color(0xFF6FBF8F)
                         ApplyMethod.MANUAL -> Color(0xFF8FA9C4)
                         ApplyMethod.ALTERNATIVE -> Color(0xFFC4A872)
+                        ApplyMethod.UNVERIFIED -> Muted
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1224,16 +1343,23 @@ private fun LauncherDetailSheet(
                 DetailSectionHeader("VERIFICATION SOURCE & CONFIDENCE")
                 Spacer(Modifier.height(8.dp))
                 InfoBox {
+                    val confidenceColor = when (spec.verification.confidence) {
+                        ConfidenceLevel.VERIFIED_OFFICIAL_DOCS,
+                        ConfidenceLevel.VERIFIED_SOURCE_CODE -> Color(0xFF8FAF8F)
+                        ConfidenceLevel.VERIFIED_INTENT_SPEC,
+                        ConfidenceLevel.COMMUNITY_VERIFIED -> Color(0xFFC4A872)
+                        ConfidenceLevel.UNVERIFIED -> Muted
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Outlined.Verified,
                             contentDescription = null,
-                            tint = Color(0xFF8FAF8F),
+                            tint = confidenceColor,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = spec.verification.confidence.label,
+                            text = "${spec.verification.status.label} · ${spec.verification.confidence.label}",
                             color = Silver,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -1242,6 +1368,22 @@ private fun LauncherDetailSheet(
 
                     Spacer(Modifier.height(6.dp))
 
+                    Text(
+                        text = "Integration status: ${spec.verification.status.label}",
+                        color = Muted,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        text = "Play availability: ${spec.listingAvailability.label}",
+                        color = Muted,
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        text = spec.listingAvailability.explanation,
+                        color = Muted,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
                     Text(
                         text = "Source Type: ${spec.verification.sourceType}",
                         color = Muted,
@@ -1264,20 +1406,19 @@ private fun LauncherDetailSheet(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // Clickable link to official documentation
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.White.copy(alpha = 0.05f))
-                            .clickable {
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(spec.verification.url))
-                                    context.startActivity(intent)
-                                } catch (_: Exception) { }
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    if (spec.verification.url != null && spec.verification.linkLabel != null) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .clickable {
+                                    try {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(spec.verification.url)))
+                                    } catch (_: Exception) { }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                             contentDescription = null,
@@ -1286,11 +1427,12 @@ private fun LauncherDetailSheet(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "View Official Documentation Source",
+                            text = spec.verification.linkLabel,
                             color = Silver,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
+                        }
                     }
                 }
 
@@ -1364,12 +1506,31 @@ private fun LauncherDetailSheet(
                         text = label,
                         icon = Icons.Outlined.Settings,
                         onClick = {
-                            val pkg = state.installedPackage ?: spec.packageNames.firstOrNull()
-                            if (pkg != null) {
-                                try {
-                                    val intent = context.packageManager.getLaunchIntentForPackage(pkg)
-                                    if (intent != null) context.startActivity(intent)
-                                } catch (_: Exception) { }
+                            val pkg = state.installedPackage
+                            val result = if (pkg == null) {
+                                LauncherOpenResult(
+                                    opened = false,
+                                    message = "${spec.name} is not available as an installed launcher on this device."
+                                )
+                            } else {
+                                openLauncher(context, pkg, spec.name)
+                            }
+                            launcherOpenNotice = result.message
+                        }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                launcherOpenNotice?.let { message ->
+                    ActionNotice(text = message, isWarning = true)
+                    Spacer(Modifier.height(8.dp))
+                    ActionSheetButton(
+                        text = "OPEN DEFAULT APP SETTINGS",
+                        icon = Icons.Outlined.Settings,
+                        onClick = {
+                            if (!openDefaultAppsSettings(context)) {
+                                launcherOpenNotice =
+                                    "$message Open Android Settings → Apps → Default apps → Home app manually."
                             }
                         }
                     )

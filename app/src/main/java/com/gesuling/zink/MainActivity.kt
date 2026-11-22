@@ -1,8 +1,10 @@
 package com.gesuling.zink
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.Lifecycle
@@ -22,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Home
@@ -55,20 +58,28 @@ import com.gesuling.zink.ui.anim.pressScale
 import com.gesuling.zink.ui.icons.IconsScreen
 import com.gesuling.zink.ui.icons.sampleIconsList
 import com.gesuling.zink.ui.requests.RequestsScreen
+import com.gesuling.zink.ui.requests.RequestsSelectionManager
 import com.gesuling.zink.ui.settings.SettingsScreen
 import com.gesuling.zink.ui.theme.*
 import com.gesuling.zink.ui.apply.ApplyScreen
+import com.gesuling.zink.ui.apply.ApplyStateManager
+import com.gesuling.zink.ui.icons.IconsStateManager
 import com.gesuling.zink.ui.wallpapers.FavouritesManager
 import com.gesuling.zink.ui.wallpapers.WallpapersScreen
+import com.gesuling.zink.ui.wallpapers.WallpapersStateManager
 import com.gesuling.zink.ui.wallpapers.sampleWallpapers
 
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
-cd C:\Users\LENOVO\Documents\Zink
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         FavouritesManager.restore(this, sampleWallpapers.mapTo(mutableSetOf()) { it.id })
+        RequestsSelectionManager.restore(this)
+        ApplyStateManager.restore(this)
+        IconsStateManager.restore(this)
+        WallpapersStateManager.restore(this)
         enableEdgeToEdge()
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
         window.decorView.systemUiVisibility =
@@ -101,25 +112,49 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun ZinkHomeScreen(
     isPureAmoled: Boolean,
     onPureAmoledChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val activity = context as? android.app.Activity
+    val initialTab = activity?.intent?.getIntExtra("target_tab", 0)?.coerceIn(0, 4) ?: 0
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var headerArtwork by remember { mutableStateOf(ZinkPreferences.getHeaderArtwork(context)) }
     var launcherRefreshVersion by remember { mutableIntStateOf(0) }
     val lifecycleOwner = context as? LifecycleOwner
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) launcherRefreshVersion++
+            if (event == Lifecycle.Event.ON_RESUME) {
+                launcherRefreshVersion++
+                activity?.intent?.getIntExtra("target_tab", -1)?.let { tab ->
+                    if (tab in 0..4) {
+                        selectedTab = tab
+                        activity.intent.removeExtra("target_tab")
+                    }
+                }
+            }
         }
         lifecycleOwner?.lifecycle?.addObserver(observer)
         onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
+
+    BackHandler(enabled = isSettingsOpen || selectedTab != 0) {
+        if (isSettingsOpen) {
+            isSettingsOpen = false
+        } else if (selectedTab != 0) {
+            selectedTab = 0
+        }
     }
 
     val colors = LocalZinkColors.current
@@ -135,245 +170,288 @@ fun ZinkHomeScreen(
     val density = LocalDensity.current
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
-        if (isSettingsOpen) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                SettingsScreen(
-                    headerArtwork = headerArtwork,
-                    onHeaderArtworkChange = { artworkId ->
-                        headerArtwork = ZinkPreferences.setHeaderArtwork(context, artworkId)
-                    },
-                    isPureAmoled = isPureAmoled,
-                    onPuroAmoledChange = onPureAmoledChange,
-                    onBackClick = { isSettingsOpen = false },
-                    launcherRefreshVersion = launcherRefreshVersion,
-                    onApplyToLauncherClick = {
-                        selectedTab = 3
-                        isSettingsOpen = false
-                    }
-                )
-                GlassmorphicBottomNavigation(
-                    tabs = tabs,
-                    tabIcons = tabIcons,
-                    selectedIndex = selectedTab,
-                    onTabSelected = {
-                        selectedTab = it
-                        isSettingsOpen = false
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 24.dp, vertical = 12.dp)
-                )
-            }
-        } else {
-            Scaffold(
-                containerColor = colors.background,
-                contentWindowInsets = WindowInsets(0)
-            ) { padding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(colors.background)
-                        .padding(padding)
-                ) {
-                    AnimatedContent(
-                        targetState = selectedTab,
-                        transitionSpec = {
-                            val direction = if (targetState > initialState) 1 else -1
-                            val offsetPx = with(density) { 12.dp.roundToPx() }
-                            (slideInVertically(
-                                animationSpec = tween(300, easing = FastOutSlowInEasing),
-                                initialOffsetY = { offsetPx * direction }
-                            ) + fadeIn(animationSpec = tween(300, easing = FastOutSlowInEasing)))
-                            .togetherWith(
-                                slideOutVertically(
-                                    animationSpec = tween(250, easing = FastOutSlowInEasing),
-                                    targetOffsetY = { -offsetPx * direction }
-                                ) + fadeOut(animationSpec = tween(200))
-                            )
-                        },
-                        label = "screen_transition"
-                    ) { tab ->
-                        when (tab) {
-                            1 -> {
-                                IconsScreen()
-                            }
-                            2 -> {
-                                WallpapersScreen()
-                            }
-                            3 -> {
-                                ApplyScreen(launcherRefreshVersion)
-                            }
-                            4 -> {
-                                RequestsScreen()
-                            }
-                            0 -> {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .verticalScroll(rememberScrollState())
-                                        .padding(bottom = navBarBottom + 104.dp)
-                                ) {
-                                    Box(
+    SharedTransitionLayout {
+        val sharedTransitionScope = this
+        Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
+            AnimatedVisibility(
+                visible = !isSettingsOpen,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(200))
+            ) {
+                val animatedVisibilityScope = this
+                Scaffold(
+                    containerColor = colors.background,
+                    contentWindowInsets = WindowInsets(0)
+                ) { padding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(colors.background)
+                            .padding(padding)
+                    ) {
+                        AnimatedContent(
+                            targetState = selectedTab,
+                            transitionSpec = {
+                                val direction = if (targetState > initialState) 1 else -1
+                                val offsetPx = with(density) { 12.dp.roundToPx() }
+                                (slideInVertically(
+                                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                                    initialOffsetY = { offsetPx * direction }
+                                ) + fadeIn(animationSpec = tween(300, easing = FastOutSlowInEasing)))
+                                .togetherWith(
+                                    slideOutVertically(
+                                        animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                        targetOffsetY = { -offsetPx * direction }
+                                    ) + fadeOut(animationSpec = tween(200))
+                                )
+                            },
+                            label = "screen_transition"
+                        ) { tab ->
+                            when (tab) {
+                                1 -> {
+                                    IconsScreen()
+                                }
+                                2 -> {
+                                    WallpapersScreen()
+                                }
+                                3 -> {
+                                    ApplyScreen(launcherRefreshVersion)
+                                }
+                                4 -> {
+                                    RequestsScreen()
+                                }
+                                0 -> {
+                                    Column(
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(230.dp)
+                                            .fillMaxSize()
+                                            .verticalScroll(rememberScrollState())
+                                            .padding(bottom = navBarBottom + 104.dp)
                                     ) {
-                                        val headerDrawable = when (headerArtwork) {
-                                            "Obsidian" -> R.drawable.obsidian_header
-                                            "Nocturne" -> R.drawable.nocturne_header
-                                            else -> R.drawable.zink_header
-                                        }
-                                        val headerAlignment = when (headerArtwork) {
-                                            "Obsidian" -> Alignment.Center
-                                            "Nocturne" -> Alignment.Center
-                                            else -> Alignment.Center
-                                        }
-                                        Image(
-                                            painter = painterResource(headerDrawable),
-                                            contentDescription = "Zink header artwork",
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop,
-                                            alignment = headerAlignment
-                                        )
-
-                                        // Subtle Silver Settings Gear Icon over banner artwork (Transparent background, 48dp touch area)
                                         Box(
                                             modifier = Modifier
-                                                .statusBarsPadding()
-                                                .padding(top = 12.5.dp, end = 12.dp)
-                                                .offset(y = (-20).dp)
-                                                .align(Alignment.TopEnd)
-                                                .size(48.dp)
-                                                .pressScale { isSettingsOpen = true },
-                                            contentAlignment = Alignment.Center
+                                                .fillMaxWidth()
+                                                .height(230.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Settings,
-                                                contentDescription = "Settings",
-                                                tint = Silver,
-                                                modifier = Modifier.size(22.dp)
+                                            val headerDrawable = when (headerArtwork) {
+                                                "Obsidian" -> R.drawable.obsidian_header
+                                                "Nocturne" -> R.drawable.nocturne_header
+                                                else -> R.drawable.zink_header
+                                            }
+                                            val headerAlignment = when (headerArtwork) {
+                                                "Obsidian" -> Alignment.Center
+                                                "Nocturne" -> Alignment.Center
+                                                else -> Alignment.Center
+                                            }
+                                            Image(
+                                                painter = painterResource(headerDrawable),
+                                                contentDescription = "Zink header artwork",
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop,
+                                                alignment = headerAlignment
                                             )
                                         }
-                                    }
 
-                                    Spacer(Modifier.height(24.dp))
+                                        Spacer(Modifier.height(24.dp))
 
-                                    Text(
-                                        text = "Z I N K",
-                                        color = Silver,
-                                        fontSize = 30.sp,
-                                        fontWeight = FontWeight.Light,
-                                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                                    )
-
-                                    Spacer(Modifier.height(8.dp))
-
-                                    Text(
-                                        text = "DARKNESS, REFINED.",
-                                        color = Muted,
-                                        fontSize = 10.sp,
-                                        letterSpacing = 3.sp,
-                                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                                    )
-
-                                    Spacer(Modifier.height(32.dp))
-
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 20.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        SummaryCard(
-                                            "ICONS",
-                                            "${sampleIconsList.size}",
-                                            Modifier
-                                                .weight(1f)
-                                                .pressScale { selectedTab = 1 }
+                                        Text(
+                                            text = "Z I N K",
+                                            color = Silver,
+                                            fontSize = 30.sp,
+                                            fontWeight = FontWeight.Light,
+                                            modifier = Modifier.align(Alignment.CenterHorizontally)
                                         )
-                                        SummaryCard(
-                                            "WALLPAPERS",
-                                            "${sampleWallpapers.size}",
-                                            Modifier
-                                                .weight(1f)
-                                                .pressScale { selectedTab = 2 }
+
+                                        Spacer(Modifier.height(8.dp))
+
+                                        Text(
+                                            text = "DARKNESS, REFINED.",
+                                            color = Muted,
+                                            fontSize = 10.sp,
+                                            letterSpacing = 3.sp,
+                                            modifier = Modifier.align(Alignment.CenterHorizontally)
                                         )
-                                        SummaryCard(
-                                            "FAVOURITES",
-                                            "${FavouritesManager.favoritedIds.size}",
-                                            Modifier
-                                                .weight(1f)
-                                                .pressScale { selectedTab = 2 }
-                                        )
-                                    }
 
-                                    Spacer(Modifier.height(32.dp))
+                                        Spacer(Modifier.height(32.dp))
 
-                                    Text(
-                                        text = "EXPLORE",
-                                        color = Silver,
-                                        fontSize = 13.sp,
-                                        letterSpacing = 2.sp,
-                                        modifier = Modifier.padding(horizontal = 22.dp)
-                                    )
-
-                                    Spacer(Modifier.height(14.dp))
-
-                                    // Entry Point 2: Settings & Preferences row below Your Favourites in Explore section
-                                    listOf(
-                                        Triple("Icon Collection", "Explore ${sampleIconsList.size} silver-dark icons", 1),
-                                        Triple("Wallpapers", "Explore ${sampleWallpapers.size} dark visual experiences", 2),
-                                        Triple("Apply Icon Pack", "Launcher compatibility & setup guide", 3),
-                                        Triple("Settings & Preferences", "Configure pack system, theme & launcher", 99)
-                                    ).forEach { (title, subtitle, targetTab) ->
-                                        Column(
+                                        Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 20.dp, vertical = 5.dp)
-                                                .clip(RoundedCornerShape(16.dp))
-                                                .background(colors.cardBackground)
-                                                .glowingBorderOnPress(RoundedCornerShape(16.dp))
-                                                .pressScale {
-                                                    if (targetTab == 99) {
-                                                        isSettingsOpen = true
-                                                    } else {
-                                                        selectedTab = targetTab
-                                                    }
-                                                }
-                                                .padding(18.dp)
+                                                .padding(horizontal = 20.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                                         ) {
-                                            Text(title, color = Silver, fontSize = 15.sp)
-                                            Spacer(Modifier.height(5.dp))
-                                            Text(subtitle, color = Muted, fontSize = 12.sp)
+                                            SummaryCard(
+                                                "ICONS",
+                                                "${sampleIconsList.size}",
+                                                Modifier
+                                                    .weight(1f)
+                                                    .pressScale { selectedTab = 1 }
+                                            )
+                                            SummaryCard(
+                                                "WALLPAPERS",
+                                                "${sampleWallpapers.size}",
+                                                Modifier
+                                                    .weight(1f)
+                                                    .pressScale { selectedTab = 2 }
+                                            )
+                                            SummaryCard(
+                                                "FAVOURITES",
+                                                "${FavouritesManager.favoritedIds.size}",
+                                                Modifier
+                                                    .weight(1f)
+                                                    .pressScale { selectedTab = 2 }
+                                            )
+                                        }
+
+                                        Spacer(Modifier.height(32.dp))
+
+                                        Text(
+                                            text = "EXPLORE",
+                                            color = Silver,
+                                            fontSize = 13.sp,
+                                            letterSpacing = 2.sp,
+                                            modifier = Modifier.padding(horizontal = 22.dp)
+                                        )
+
+                                        Spacer(Modifier.height(14.dp))
+
+                                        // Entry Point 2: Settings & Preferences row below Your Favourites in Explore section
+                                        listOf(
+                                            Triple("Icon Collection", "Explore ${sampleIconsList.size} silver-dark icons", 1),
+                                            Triple("Wallpapers", "Explore ${sampleWallpapers.size} dark visual experiences", 2),
+                                            Triple("Apply Icon Pack", "Launcher compatibility & setup guide", 3),
+                                            Triple("Settings & Preferences", "Configure pack system, theme & launcher", 99)
+                                        ).forEach { (title, subtitle, targetTab) ->
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 20.dp, vertical = 5.dp)
+                                                    .clip(RoundedCornerShape(16.dp))
+                                                    .background(colors.cardBackground)
+                                                    .glowingBorderOnPress(RoundedCornerShape(16.dp))
+                                                    .pressScale {
+                                                        if (targetTab == 99) {
+                                                            isSettingsOpen = true
+                                                        } else {
+                                                            selectedTab = targetTab
+                                                        }
+                                                    }
+                                                    .padding(18.dp)
+                                            ) {
+                                                Text(title, color = Silver, fontSize = 15.sp)
+                                                Spacer(Modifier.height(5.dp))
+                                                Text(subtitle, color = Muted, fontSize = 12.sp)
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            else -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = tabs[tab].uppercase(),
-                                        color = Silver,
-                                        fontSize = 20.sp,
-                                        fontWeight = FontWeight.Light,
-                                        letterSpacing = 3.sp
-                                    )
+                                else -> {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = tabs[tab].uppercase(),
+                                            color = Silver,
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Light,
+                                            letterSpacing = 3.sp
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
 
+                        // Subtle Silver Settings Gear Icon over banner artwork with SharedElement transition
+                        Box(
+                            modifier = Modifier
+                                .statusBarsPadding()
+                                .padding(top = 8.dp, end = 16.dp)
+                                .align(Alignment.TopEnd)
+                                .size(48.dp)
+                                .let { modifier ->
+                                    with(sharedTransitionScope) {
+                                        modifier.sharedElement(
+                                            sharedContentState = rememberSharedContentState(key = "settings_gear_button"),
+                                            animatedVisibilityScope = animatedVisibilityScope
+                                        )
+                                    }
+                                }
+                                .clip(CircleShape)
+                                .background(Color(0x22FFFFFF))
+                                .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                                .pressScale { isSettingsOpen = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AnimatedContent(
+                                targetState = isSettingsOpen,
+                                transitionSpec = {
+                                    fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(150))
+                                },
+                                label = "gear_icon_anim"
+                            ) { isOpen ->
+                                val rotation by animateFloatAsState(
+                                    targetValue = if (isOpen) 0f else -180f,
+                                    animationSpec = tween(300),
+                                    label = "icon_rotation"
+                                )
+                                Icon(
+                                    imageVector = if (isOpen) Icons.AutoMirrored.Filled.ArrowBack else Icons.Outlined.Settings,
+                                    contentDescription = if (isOpen) "Back" else "Settings",
+                                    tint = Silver,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .rotate(rotation)
+                                )
+                            }
+                        }
+
+                        GlassmorphicBottomNavigation(
+                            tabs = tabs,
+                            tabIcons = tabIcons,
+                            selectedIndex = selectedTab,
+                            onTabSelected = { selectedTab = it },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 24.dp, vertical = 12.dp)
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = isSettingsOpen,
+                enter = slideInHorizontally(animationSpec = tween(300)) { it / 3 } + fadeIn(animationSpec = tween(300)),
+                exit = slideOutHorizontally(animationSpec = tween(300)) { it / 3 } + fadeOut(animationSpec = tween(200))
+            ) {
+                val animatedVisibilityScope = this
+                Box(modifier = Modifier.fillMaxSize()) {
+                    SettingsScreen(
+                        headerArtwork = headerArtwork,
+                        onHeaderArtworkChange = { artworkId ->
+                            headerArtwork = ZinkPreferences.setHeaderArtwork(context, artworkId)
+                        },
+                        isPureAmoled = isPureAmoled,
+                        onPureAmoledChange = onPureAmoledChange,
+                        onBackClick = { isSettingsOpen = false },
+                        launcherRefreshVersion = launcherRefreshVersion,
+                        onApplyToLauncherClick = {
+                            selectedTab = 3
+                            isSettingsOpen = false
+                        },
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        isSettingsOpen = isSettingsOpen
+                    )
                     GlassmorphicBottomNavigation(
                         tabs = tabs,
                         tabIcons = tabIcons,
                         selectedIndex = selectedTab,
-                        onTabSelected = { selectedTab = it },
+                        onTabSelected = {
+                            selectedTab = it
+                            isSettingsOpen = false
+                        },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()

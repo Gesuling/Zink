@@ -62,6 +62,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.gesuling.zink.R
 import com.gesuling.zink.ui.anim.glowingBorderOnPress
 import com.gesuling.zink.ui.anim.pressScale
+import com.gesuling.zink.ui.components.ZinkPageHeader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -259,6 +260,12 @@ object WallpaperBitmapCache {
             memoryCache.put(resId, bitmap)
         }
     }
+
+    fun clear(): Long {
+        val sizeInKb = memoryCache.size()
+        memoryCache.evictAll()
+        return sizeInKb.toLong() * 1024L
+    }
 }
 
 val sampleWallpapers = listOf(
@@ -352,11 +359,36 @@ fun renderCustomWallpaperBitmap(
     return outBitmap
 }
 
+object WallpapersStateManager {
+    private const val PREFS_NAME = "zink_wallpaper_favorites"
+    private const val KEY_SHOW_FAVORITES_ONLY = "show_favorites_only"
+
+    var showFavoritesOnly by mutableStateOf(false)
+
+    fun restore(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        showFavoritesOnly = prefs.getBoolean(KEY_SHOW_FAVORITES_ONLY, false)
+    }
+
+    fun setShowFavoritesOnly(context: Context, show: Boolean) {
+        showFavoritesOnly = show
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SHOW_FAVORITES_ONLY, show)
+            .apply()
+    }
+
+    fun resetForTesting() {
+        showFavoritesOnly = false
+    }
+}
+
 @Composable
 fun WallpapersScreen() {
+    val context = LocalContext.current
     val colors = LocalZinkColors.current
     var selectedWallpaper by remember { mutableStateOf<WallpaperItem?>(null) }
-    var showFavoritesOnly by remember { mutableStateOf(false) }
+    val showFavoritesOnly = WallpapersStateManager.showFavoritesOnly
     val visibleWallpapers = filterWallpaperItems(
         wallpapers = sampleWallpapers,
         favoriteIds = FavouritesManager.favoritedIds,
@@ -373,31 +405,21 @@ fun WallpapersScreen() {
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(Modifier.height(56.dp))
-
-            Text(
-                text = "WALLPAPERS",
-                color = Silver,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Light,
-                letterSpacing = 4.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ZinkPageHeader(
+                title = "WALLPAPERS",
+                subtitleContent = {
+                    Text(
+                        text = if (showFavoritesOnly) {
+                            "${visibleWallpapers.size} SAVED FAVOURITES"
+                        } else {
+                            "${sampleWallpapers.size} CURATED DARK EXPERIENCES"
+                        },
+                        color = Muted,
+                        fontSize = 10.sp,
+                        letterSpacing = 2.sp
+                    )
+                }
             )
-
-            Spacer(Modifier.height(4.dp))
-
-            Text(
-                text = if (showFavoritesOnly) {
-                    "${visibleWallpapers.size} SAVED FAVOURITES"
-                } else {
-                    "${sampleWallpapers.size} CURATED DARK EXPERIENCES"
-                },
-                color = Muted,
-                fontSize = 10.sp,
-                letterSpacing = 2.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
             Spacer(Modifier.height(18.dp))
 
             Row(
@@ -416,7 +438,7 @@ fun WallpapersScreen() {
                             .weight(1f)
                             .clip(RoundedCornerShape(14.dp))
                             .background(if (selected) Color(0xFF282830) else Color.Transparent)
-                            .clickable { showFavoritesOnly = favoritesOnly }
+                            .clickable { WallpapersStateManager.setShowFavoritesOnly(context, favoritesOnly) }
                             .padding(vertical = 11.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -513,36 +535,26 @@ fun FavouritesScreen() {
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(Modifier.height(56.dp))
-
-            Text(
-                text = "FAVOURITES",
-                color = Silver,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Light,
-                letterSpacing = 4.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ZinkPageHeader(
+                title = "FAVOURITES",
+                subtitleContent = {
+                    AnimatedContent(
+                        targetState = favoritedList.size,
+                        transitionSpec = {
+                            (slideInVertically(animationSpec = tween(250)) { height -> height } + fadeIn())
+                                .togetherWith(slideOutVertically(animationSpec = tween(250)) { height -> -height } + fadeOut())
+                        },
+                        label = "fav_count_anim"
+                    ) { count ->
+                        Text(
+                            text = "$count SAVED WALLPAPERS",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            letterSpacing = 2.sp
+                        )
+                    }
+                }
             )
-
-            Spacer(Modifier.height(4.dp))
-
-            AnimatedContent(
-                targetState = favoritedList.size,
-                transitionSpec = {
-                    (slideInVertically(animationSpec = tween(250)) { height -> height } + fadeIn())
-                        .togetherWith(slideOutVertically(animationSpec = tween(250)) { height -> -height } + fadeOut())
-                },
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-                label = "fav_count_anim"
-            ) { count ->
-                Text(
-                    text = "$count SAVED WALLPAPERS",
-                    color = Muted,
-                    fontSize = 10.sp,
-                    letterSpacing = 2.sp
-                )
-            }
-
             Spacer(Modifier.height(24.dp))
 
             AnimatedVisibility(

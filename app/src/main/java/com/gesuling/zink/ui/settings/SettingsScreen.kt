@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,11 +18,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -32,11 +36,56 @@ import com.gesuling.zink.ui.anim.glowingBorderOnPress
 import com.gesuling.zink.ui.anim.pressScale
 import com.gesuling.zink.ui.apply.LauncherRegistry
 import com.gesuling.zink.ui.theme.LocalZinkColors
+import com.gesuling.zink.ui.components.ZinkToolbarHeader
+import com.gesuling.zink.ui.wallpapers.WallpaperBitmapCache
 import com.gesuling.zink.ui.wallpapers.WallpaperDownloadQuality
 import com.gesuling.zink.ui.wallpapers.WallpaperQualityPreferences
 
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
+
+object ZinkCacheManager {
+    fun clearCaches(context: Context): CacheClearResult {
+        val ramBytesCleared = WallpaperBitmapCache.clear()
+
+        var diskBytesCleared = 0L
+        val cacheDirs = listOfNotNull(context.cacheDir, context.externalCacheDir)
+        for (dir in cacheDirs) {
+            if (dir.exists() && dir.isDirectory) {
+                diskBytesCleared += deleteRecursive(dir)
+            }
+        }
+
+        return CacheClearResult(ramBytesCleared, diskBytesCleared)
+    }
+
+    private fun deleteRecursive(file: java.io.File): Long {
+        var cleared = 0L
+        if (file.isDirectory) {
+            file.listFiles()?.forEach { child ->
+                cleared += deleteRecursive(child)
+            }
+        } else {
+            val len = file.length()
+            if (file.delete()) {
+                cleared += len
+            }
+        }
+        return cleared
+    }
+}
+
+data class CacheClearResult(val ramBytes: Long, val diskBytes: Long) {
+    val totalBytes: Long get() = ramBytes + diskBytes
+}
+
+fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format(java.util.Locale.US, "%.1f KB", kb)
+    val mb = kb / 1024.0
+    return String.format(java.util.Locale.US, "%.1f MB", mb)
+}
 
 private fun currentDefaultLauncherSummary(context: Context): String {
     val packageName = LauncherRegistry.detectDefaultLauncherPackage(context)
@@ -44,15 +93,19 @@ private fun currentDefaultLauncherSummary(context: Context): String {
     return "${LauncherRegistry.getApplicationLabel(context, packageName)} · $packageName"
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun SettingsScreen(
     headerArtwork: String,
     onHeaderArtworkChange: (String) -> Unit,
     isPureAmoled: Boolean,
-    onPuroAmoledChange: (Boolean) -> Unit,
+    onPureAmoledChange: (Boolean) -> Unit,
     onBackClick: () -> Unit,
     onApplyToLauncherClick: () -> Unit,
-    launcherRefreshVersion: Int = 0
+    launcherRefreshVersion: Int = 0,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    isSettingsOpen: Boolean = true
 ) {
     val context = LocalContext.current
     val colors = LocalZinkColors.current
@@ -68,6 +121,15 @@ fun SettingsScreen(
         mutableStateOf(WallpaperQualityPreferences.get(context))
     }
 
+    var showChangelog by remember { mutableStateOf(false) }
+    val versionName = remember(context) {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.1.2"
+        } catch (_: Exception) {
+            "0.1.2"
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -76,60 +138,15 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 8.dp)
-            ) {
-
-            // Top Bar with Back Button & Header Title
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                IconButton(
-                    onClick = onBackClick,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(Color(0x22FFFFFF))
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
-                        .pressScale()
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Silver,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "SETTINGS",
-                        color = Silver,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Light,
-                        letterSpacing = 4.sp
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "PREFERENCES & PACK SYSTEM",
-                        color = Muted,
-                        fontSize = 9.sp,
-                        letterSpacing = 2.sp
-                    )
-                }
-            }
-            }
+            ZinkToolbarHeader(
+                title = "SETTINGS",
+                subtitle = "PREFERENCES & PACK SYSTEM",
+                onBackClick = onBackClick,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
+                isSettingsOpen = isSettingsOpen
+            )
 
             Column(
                 modifier = Modifier
@@ -157,7 +174,7 @@ fun SettingsScreen(
                     title = "Pure AMOLED Black",
                     subtitle = "Use a true #000000 black background for AMOLED displays",
                     checked = isPureAmoled,
-                    onCheckedChange = onPuroAmoledChange
+                    onCheckedChange = onPureAmoledChange
                 )
 
                 SettingsDivider()
@@ -296,12 +313,27 @@ fun SettingsScreen(
                 // Row 1: Clear Icon Cache
                 SettingsClickableRow(
                     title = "Clear Icon Cache",
-                    subtitle = "Free up cached bitmap memory (84 icons cached)",
+                    subtitle = "Free up cached bitmap memory & disk cache",
                     trailing = {
                         Text("Clear", color = Silver, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     },
                     onClick = {
-                        Toast.makeText(context, "Icon bitmap cache cleared!", Toast.LENGTH_SHORT).show()
+                        val result = ZinkCacheManager.clearCaches(context)
+                        val ramText = formatBytes(result.ramBytes)
+                        val diskText = formatBytes(result.diskBytes)
+                        if (result.totalBytes > 0) {
+                            Toast.makeText(
+                                context,
+                                "Cleared $ramText RAM cache and $diskText disk cache.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Cache is already empty (0 KB cleared).",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 )
 
@@ -310,7 +342,7 @@ fun SettingsScreen(
                 // Row 2: App Version
                 SettingsClickableRow(
                     title = "App Version",
-                    subtitle = "Zink Version & Build Target",
+                    subtitle = "Zink Version & Release History",
                     trailing = {
                         Box(
                             modifier = Modifier
@@ -318,10 +350,12 @@ fun SettingsScreen(
                                 .background(Color(0x22FFFFFF))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
-                            Text("v1.0.0 (API 37)", color = Silver, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("v$versionName (API 37)", color = Silver, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     },
-                    onClick = {}
+                    onClick = {
+                        showChangelog = true
+                    }
                 )
 
                 SettingsDivider()
@@ -354,6 +388,10 @@ fun SettingsScreen(
                 }
             }
             }
+        }
+
+        if (showChangelog) {
+            ChangelogBottomSheet(onDismiss = { showChangelog = false })
         }
     }
 }
@@ -447,7 +485,7 @@ fun SettingsScreenPreview() {
         headerArtwork = "Frieren",
         onHeaderArtworkChange = {},
         isPureAmoled = false,
-        onPuroAmoledChange = {},
+        onPureAmoledChange = {},
         onBackClick = {},
         onApplyToLauncherClick = {}
     )

@@ -58,6 +58,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 import com.gesuling.zink.ui.theme.LocalZinkColors
+import com.gesuling.zink.ui.components.ZinkPageHeader
 
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
@@ -82,21 +83,276 @@ val fallbackUnthemedApps = listOf(
     UnthemedAppItem("Pocket", "com.ideashower.readitlater.pro", "com.ideashower.readitlater.pro.activity.SplashActivity")
 )
 
+data class RequestsStateSnapshot(
+    val selectedMode: Int = 0,
+    val searchQuery: String = "",
+    val selectedPackageNames: Set<String> = emptySet(),
+    val selectedThemedAppIds: Set<Int> = emptySet(),
+    val manualAppName: String = "",
+    val manualPackageName: String = "",
+    val manualNote: String = ""
+)
+
+internal fun encodeIntSetToStringSet(set: Set<Int>): Set<String> =
+    set.mapTo(mutableSetOf()) { it.toString() }
+
+internal fun decodeStringSetToIntSet(set: Set<String>?): Set<Int> =
+    set?.mapNotNullTo(mutableSetOf()) { it.toIntOrNull() } ?: emptySet()
+
+internal fun restoreRequestsStateSnapshot(
+    savedMode: Int?,
+    savedQuery: String?,
+    savedPackages: Set<String>?,
+    savedThemedIds: Set<String>?,
+    savedManualName: String?,
+    savedManualPkg: String?,
+    savedManualNote: String?
+): RequestsStateSnapshot = RequestsStateSnapshot(
+    selectedMode = (savedMode ?: 0).coerceIn(0, 2),
+    searchQuery = savedQuery ?: "",
+    selectedPackageNames = savedPackages ?: emptySet(),
+    selectedThemedAppIds = decodeStringSetToIntSet(savedThemedIds),
+    manualAppName = savedManualName ?: "",
+    manualPackageName = savedManualPkg ?: "",
+    manualNote = savedManualNote ?: ""
+)
+
+object RequestsSelectionManager {
+    private const val PREFS_NAME = "zink_requests_prefs"
+    private const val KEY_SELECTED_MODE = "selected_mode"
+    private const val KEY_SEARCH_QUERY = "search_query"
+    private const val KEY_SELECTED_PACKAGES = "selected_packages"
+    private const val KEY_SELECTED_THEMED_IDS = "selected_themed_ids"
+    private const val KEY_MANUAL_APP_NAME = "manual_app_name"
+    private const val KEY_MANUAL_PACKAGE_NAME = "manual_package_name"
+    private const val KEY_MANUAL_NOTE = "manual_note"
+
+    var selectedMode by mutableIntStateOf(0)
+    var searchQuery by mutableStateOf("")
+    val selectedPackageNames = mutableStateSetOf<String>()
+    val selectedThemedAppIds = mutableStateSetOf<Int>()
+    var manualAppName by mutableStateOf("")
+    var manualPackageName by mutableStateOf("")
+    var manualNote by mutableStateOf("")
+
+    fun restore(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val snapshot = restoreRequestsStateSnapshot(
+            savedMode = prefs.getInt(KEY_SELECTED_MODE, 0),
+            savedQuery = prefs.getString(KEY_SEARCH_QUERY, ""),
+            savedPackages = prefs.getStringSet(KEY_SELECTED_PACKAGES, emptySet()),
+            savedThemedIds = prefs.getStringSet(KEY_SELECTED_THEMED_IDS, emptySet()),
+            savedManualName = prefs.getString(KEY_MANUAL_APP_NAME, ""),
+            savedManualPkg = prefs.getString(KEY_MANUAL_PACKAGE_NAME, ""),
+            savedManualNote = prefs.getString(KEY_MANUAL_NOTE, "")
+        )
+
+        selectedMode = snapshot.selectedMode
+        searchQuery = snapshot.searchQuery
+
+        selectedPackageNames.clear()
+        selectedPackageNames.addAll(snapshot.selectedPackageNames)
+
+        selectedThemedAppIds.clear()
+        selectedThemedAppIds.addAll(snapshot.selectedThemedAppIds)
+
+        manualAppName = snapshot.manualAppName
+        manualPackageName = snapshot.manualPackageName
+        manualNote = snapshot.manualNote
+    }
+
+    fun setMode(context: Context, mode: Int) {
+        val validMode = mode.coerceIn(0, 2)
+        selectedMode = validMode
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_SELECTED_MODE, validMode)
+            .apply()
+    }
+
+    fun setSearchQuery(context: Context, query: String) {
+        searchQuery = query
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SEARCH_QUERY, query)
+            .apply()
+    }
+
+    fun togglePackageSelection(context: Context, packageName: String) {
+        if (selectedPackageNames.contains(packageName)) {
+            selectedPackageNames.remove(packageName)
+        } else {
+            selectedPackageNames.add(packageName)
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(KEY_SELECTED_PACKAGES, selectedPackageNames.toSet())
+            .apply()
+    }
+
+    fun selectAllPackages(context: Context, packageNames: List<String>) {
+        selectedPackageNames.clear()
+        selectedPackageNames.addAll(packageNames)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(KEY_SELECTED_PACKAGES, selectedPackageNames.toSet())
+            .apply()
+    }
+
+    fun deselectAllPackages(context: Context) {
+        selectedPackageNames.clear()
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_SELECTED_PACKAGES)
+            .apply()
+    }
+
+    fun toggleThemedAppSelection(context: Context, appId: Int) {
+        if (selectedThemedAppIds.contains(appId)) {
+            selectedThemedAppIds.remove(appId)
+        } else {
+            selectedThemedAppIds.add(appId)
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(KEY_SELECTED_THEMED_IDS, encodeIntSetToStringSet(selectedThemedAppIds.toSet()))
+            .apply()
+    }
+
+    fun selectAllThemedApps(context: Context, appIds: List<Int>) {
+        selectedThemedAppIds.clear()
+        selectedThemedAppIds.addAll(appIds)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(KEY_SELECTED_THEMED_IDS, encodeIntSetToStringSet(selectedThemedAppIds.toSet()))
+            .apply()
+    }
+
+    fun deselectAllThemedApps(context: Context) {
+        selectedThemedAppIds.clear()
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_SELECTED_THEMED_IDS)
+            .apply()
+    }
+
+    fun setManualAppName(context: Context, name: String) {
+        manualAppName = name
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_MANUAL_APP_NAME, name)
+            .apply()
+    }
+
+    fun setManualPackageName(context: Context, pkg: String) {
+        manualPackageName = pkg
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_MANUAL_PACKAGE_NAME, pkg)
+            .apply()
+    }
+
+    fun setManualNote(context: Context, note: String) {
+        manualNote = note
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_MANUAL_NOTE, note)
+            .apply()
+    }
+
+    fun snapshot(): RequestsStateSnapshot = RequestsStateSnapshot(
+        selectedMode = selectedMode,
+        searchQuery = searchQuery,
+        selectedPackageNames = selectedPackageNames.toSet(),
+        selectedThemedAppIds = selectedThemedAppIds.toSet(),
+        manualAppName = manualAppName,
+        manualPackageName = manualPackageName,
+        manualNote = manualNote
+    )
+
+    fun resetForTesting() {
+        selectedMode = 0
+        searchQuery = ""
+        selectedPackageNames.clear()
+        selectedThemedAppIds.clear()
+        manualAppName = ""
+        manualPackageName = ""
+        manualNote = ""
+    }
+}
+
+data class RequestSerializationResult(
+    val subject: String,
+    val body: String,
+    val count: Int
+)
+
+fun serializeRequest(
+    selectedMode: Int,
+    installedUnthemedApps: List<UnthemedAppItem>,
+    selectedPackageNames: Set<String>,
+    themedAppList: List<AppIconItem>,
+    selectedThemedAppIds: Set<Int>,
+    manualAppName: String,
+    manualPackageName: String,
+    manualNote: String
+): RequestSerializationResult {
+    val selectedApps = installedUnthemedApps.filter { selectedPackageNames.contains(it.packageName) }
+    val selectedThemedApps = themedAppList.filter { selectedThemedAppIds.contains(it.id) }
+    val requestCount = when (selectedMode) {
+        0 -> selectedApps.size
+        1 -> selectedThemedApps.size
+        else -> if (manualAppName.isNotBlank() || manualPackageName.isNotBlank()) 1 else 0
+    }
+    val bodyBuilder = StringBuilder()
+    bodyBuilder.append("Zink Icon Request Submission\n\n")
+
+    when (selectedMode) {
+        0 -> {
+            bodyBuilder.append("Requested Unthemed Apps (${selectedApps.size}):\n")
+            selectedApps.forEachIndexed { i, app ->
+                bodyBuilder.append("${i + 1}. ${app.appName} (${app.packageName})\n   Component: ComponentInfo{${app.componentName}}\n")
+            }
+        }
+        1 -> {
+            bodyBuilder.append("Requested Themed Apps (${selectedThemedApps.size}):\n")
+            selectedThemedApps.forEachIndexed { i, app ->
+                bodyBuilder.append("${i + 1}. ${app.appName} (${app.packageName})\n")
+            }
+        }
+        2 -> {
+            bodyBuilder.append("Manual Icon Request:\n")
+            bodyBuilder.append("App Name: $manualAppName\n")
+            bodyBuilder.append("Package / Link: $manualPackageName\n")
+            if (manualNote.isNotBlank()) {
+                bodyBuilder.append("Designer Note: $manualNote\n")
+            }
+        }
+    }
+
+    bodyBuilder.append("\nSent from Zink Android App")
+    return RequestSerializationResult(
+        subject = "Zink Icon Request ($requestCount apps)",
+        body = bodyBuilder.toString(),
+        count = requestCount
+    )
+}
+
 @Composable
 fun RequestsScreen() {
     val context = LocalContext.current
     val colors = LocalZinkColors.current
 
-    var selectedMode by remember { mutableStateOf(0) } // 0: Unthemed Apps, 1: Themed Apps, 2: Manual Entry
-    var searchQuery by remember { mutableStateOf("") }
+    val selectedMode = RequestsSelectionManager.selectedMode
+    val searchQuery = RequestsSelectionManager.searchQuery
 
-    var manualAppName by remember { mutableStateOf("") }
-    var manualPackageName by remember { mutableStateOf("") }
-    var manualNote by remember { mutableStateOf("") }
+    val manualAppName = RequestsSelectionManager.manualAppName
+    val manualPackageName = RequestsSelectionManager.manualPackageName
+    val manualNote = RequestsSelectionManager.manualNote
 
     var installedUnthemedApps by remember { mutableStateOf<List<UnthemedAppItem>>(emptyList()) }
-    var selectedPackageNames by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var selectedThemedAppIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    val selectedPackageNames = RequestsSelectionManager.selectedPackageNames
+    val selectedThemedAppIds = RequestsSelectionManager.selectedThemedAppIds
     var isLoadingApps by remember { mutableStateOf(true) }
 
     val themedAppList = remember { sampleIconsList.sortedWith(compareBy(NaturalOrderComparator) { it.appName }) }
@@ -151,7 +407,6 @@ fun RequestsScreen() {
 
             withContext(Dispatchers.Main) {
                 installedUnthemedApps = listToUse
-                selectedPackageNames = emptySet()
                 isLoadingApps = false
             }
         }
@@ -174,42 +429,18 @@ fun RequestsScreen() {
     }
 
     fun submitRequest() {
-        val selectedApps = installedUnthemedApps.filter { selectedPackageNames.contains(it.packageName) }
-        val selectedThemedApps = themedAppList.filter { selectedThemedAppIds.contains(it.id) }
-        val requestCount = when (selectedMode) {
-            0 -> selectedApps.size
-            1 -> selectedThemedApps.size
-            else -> 1
-        }
-        val bodyBuilder = StringBuilder()
-        bodyBuilder.append("Zink Icon Request Submission\n\n")
-
-        when (selectedMode) {
-            0 -> {
-                bodyBuilder.append("Requested Unthemed Apps (${selectedApps.size}):\n")
-                selectedApps.forEachIndexed { i, app ->
-                    bodyBuilder.append("${i + 1}. ${app.appName} (${app.packageName})\n   Component: ComponentInfo{${app.componentName}}\n")
-                }
-            }
-            1 -> {
-                bodyBuilder.append("Requested Themed Apps (${selectedThemedApps.size}):\n")
-                selectedThemedApps.forEachIndexed { i, app ->
-                    bodyBuilder.append("${i + 1}. ${app.appName} (${app.packageName})\n")
-                }
-            }
-            2 -> {
-                bodyBuilder.append("Manual Icon Request:\n")
-                bodyBuilder.append("App Name: $manualAppName\n")
-                bodyBuilder.append("Package / Link: $manualPackageName\n")
-                if (manualNote.isNotBlank()) {
-                    bodyBuilder.append("Designer Note: $manualNote\n")
-                }
-            }
-        }
-
-        bodyBuilder.append("\nSent from Zink Android App")
-        val requestBody = bodyBuilder.toString()
-        val requestSubject = "Zink Icon Request ($requestCount apps)"
+        val serialized = serializeRequest(
+            selectedMode = selectedMode,
+            installedUnthemedApps = installedUnthemedApps,
+            selectedPackageNames = selectedPackageNames,
+            themedAppList = themedAppList,
+            selectedThemedAppIds = selectedThemedAppIds,
+            manualAppName = manualAppName,
+            manualPackageName = manualPackageName,
+            manualNote = manualNote
+        )
+        val requestBody = serialized.body
+        val requestSubject = serialized.subject
         val intent = Intent(Intent.ACTION_SENDTO).apply {
             data = Uri.parse("mailto:gesuling@gmail.com")
             putExtra(Intent.EXTRA_SUBJECT, requestSubject)
@@ -239,28 +470,11 @@ fun RequestsScreen() {
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(Modifier.height(56.dp))
-
-            Text(
-                text = "REQUESTS",
-                color = Silver,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Light,
-                letterSpacing = 4.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ZinkPageHeader(
+                title = "REQUESTS",
+                subtitle = "SUBMIT UNTHEMED APPS ANYTIME"
             )
-
             Spacer(Modifier.height(4.dp))
-
-            Text(
-                text = "SUBMIT UNTHEMED APPS ANYTIME",
-                color = Muted,
-                fontSize = 10.sp,
-                letterSpacing = 2.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(Modifier.height(24.dp))
 
             // Dynamic Summary Cards according to active segment
             Row(
@@ -325,7 +539,7 @@ fun RequestsScreen() {
                                 color = if (isSelected) Color.White.copy(alpha = 0.35f) else Color.Transparent,
                                 shape = RoundedCornerShape(20.dp)
                             )
-                            .clickable { selectedMode = modeIndex },
+                            .clickable { RequestsSelectionManager.setMode(context, modeIndex) },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -353,7 +567,7 @@ fun RequestsScreen() {
                     ) {
                         OutlinedTextField(
                             value = searchQuery,
-                            onValueChange = { searchQuery = it },
+                            onValueChange = { RequestsSelectionManager.setSearchQuery(context, it) },
                             placeholder = { Text("Search installed apps...", color = Muted, fontSize = 13.sp) },
                             leadingIcon = {
                                 Icon(Icons.Outlined.Search, contentDescription = null, tint = Silver)
@@ -386,10 +600,10 @@ fun RequestsScreen() {
                                 .background(colors.cardBackground)
                                 .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(18.dp))
                                 .clickable {
-                                    selectedPackageNames = if (isAllSelected) {
-                                        emptySet()
+                                    if (isAllSelected) {
+                                        RequestsSelectionManager.deselectAllPackages(context)
                                     } else {
-                                        installedUnthemedApps.map { it.packageName }.toSet()
+                                        RequestsSelectionManager.selectAllPackages(context, installedUnthemedApps.map { it.packageName })
                                     }
                                 }
                                 .padding(horizontal = 16.dp),
@@ -428,11 +642,7 @@ fun RequestsScreen() {
                                     app = app,
                                     isChecked = isChecked,
                                     onToggle = {
-                                        selectedPackageNames = if (isChecked) {
-                                            selectedPackageNames - app.packageName
-                                        } else {
-                                            selectedPackageNames + app.packageName
-                                        }
+                                        RequestsSelectionManager.togglePackageSelection(context, app.packageName)
                                     }
                                 )
                             }
@@ -448,7 +658,7 @@ fun RequestsScreen() {
                     ) {
                         OutlinedTextField(
                             value = searchQuery,
-                            onValueChange = { searchQuery = it },
+                            onValueChange = { RequestsSelectionManager.setSearchQuery(context, it) },
                             placeholder = { Text("Search themed apps...", color = Muted, fontSize = 13.sp) },
                             leadingIcon = {
                                 Icon(Icons.Outlined.Search, contentDescription = null, tint = Silver)
@@ -481,10 +691,10 @@ fun RequestsScreen() {
                                 .background(colors.cardBackground)
                                 .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(18.dp))
                                 .clickable {
-                                    selectedThemedAppIds = if (isAllSelected) {
-                                        emptySet()
+                                    if (isAllSelected) {
+                                        RequestsSelectionManager.deselectAllThemedApps(context)
                                     } else {
-                                        themedAppList.map { it.id }.toSet()
+                                        RequestsSelectionManager.selectAllThemedApps(context, themedAppList.map { it.id })
                                     }
                                 }
                                 .padding(horizontal = 16.dp),
@@ -513,11 +723,7 @@ fun RequestsScreen() {
                                 item = item,
                                 isSelected = isChecked,
                                 onToggle = {
-                                    selectedThemedAppIds = if (isChecked) {
-                                        selectedThemedAppIds - item.id
-                                    } else {
-                                        selectedThemedAppIds + item.id
-                                    }
+                                    RequestsSelectionManager.toggleThemedAppSelection(context, item.id)
                                 }
                             )
                         }
@@ -550,7 +756,7 @@ fun RequestsScreen() {
 
                             OutlinedTextField(
                                 value = manualAppName,
-                                onValueChange = { manualAppName = it },
+                                onValueChange = { RequestsSelectionManager.setManualAppName(context, it) },
                                 label = { Text("App Name", color = Muted) },
                                 placeholder = { Text("e.g. Spotify", color = Muted) },
                                 singleLine = true,
@@ -570,7 +776,7 @@ fun RequestsScreen() {
 
                             OutlinedTextField(
                                 value = manualPackageName,
-                                onValueChange = { manualPackageName = it },
+                                onValueChange = { RequestsSelectionManager.setManualPackageName(context, it) },
                                 label = { Text("Package Name or Play Store Link", color = Muted) },
                                 placeholder = { Text("e.g. com.spotify.music", color = Muted) },
                                 singleLine = true,
@@ -590,7 +796,7 @@ fun RequestsScreen() {
 
                             OutlinedTextField(
                                 value = manualNote,
-                                onValueChange = { manualNote = it },
+                                onValueChange = { RequestsSelectionManager.setManualNote(context, it) },
                                 label = { Text("Designer Note (Optional)", color = Muted) },
                                 placeholder = { Text("e.g. Minimal silver glass logo style", color = Muted) },
                                 maxLines = 3,

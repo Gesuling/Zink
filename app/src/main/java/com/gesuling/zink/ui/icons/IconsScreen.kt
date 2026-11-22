@@ -50,6 +50,7 @@ import com.gesuling.zink.ui.anim.glowingBorderOnPress
 import com.gesuling.zink.ui.anim.pressScale
 
 import com.gesuling.zink.ui.theme.LocalZinkColors
+import com.gesuling.zink.ui.components.ZinkPageHeader
 
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
@@ -149,11 +150,48 @@ val sampleIconsList = listOf(
     AppIconItem(84, "Battery Hero", "redpi.apps.batteryhero", "System", R.drawable.icon_battery_hero)
 ).sortedWith(compareBy(NaturalOrderComparator) { it.appName })
 
+object IconsStateManager {
+    private const val PREFS_NAME = "zink_icons_prefs"
+    private const val KEY_SEARCH_QUERY = "search_query"
+    private const val KEY_SELECTED_CATEGORY = "selected_category"
+
+    var searchQuery by mutableStateOf("")
+    var selectedCategory by mutableStateOf("All")
+
+    fun restore(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        searchQuery = prefs.getString(KEY_SEARCH_QUERY, "") ?: ""
+        selectedCategory = prefs.getString(KEY_SELECTED_CATEGORY, "All") ?: "All"
+    }
+
+    fun setSearchQuery(context: Context, query: String) {
+        searchQuery = query
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SEARCH_QUERY, query)
+            .apply()
+    }
+
+    fun setSelectedCategory(context: Context, category: String) {
+        selectedCategory = category
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SELECTED_CATEGORY, category)
+            .apply()
+    }
+
+    fun resetForTesting() {
+        searchQuery = ""
+        selectedCategory = "All"
+    }
+}
+
 @Composable
 fun IconsScreen() {
+    val context = LocalContext.current
     val colors = LocalZinkColors.current
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("All") }
+    val searchQuery = IconsStateManager.searchQuery
+    val selectedCategory = IconsStateManager.selectedCategory
     var selectedIcon by remember { mutableStateOf<AppIconItem?>(null) }
 
     val categories = remember {
@@ -180,41 +218,31 @@ fun IconsScreen() {
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(Modifier.height(56.dp))
-
-            Text(
-                text = "ICON CATALOGUE",
-                color = Silver,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Light,
-                letterSpacing = 4.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ZinkPageHeader(
+                title = "ICON CATALOGUE",
+                subtitleContent = {
+                    AnimatedContent(
+                        targetState = filteredIcons.size,
+                        transitionSpec = {
+                            (slideInVertically { h -> h } + fadeIn()).togetherWith(slideOutVertically { h -> -h } + fadeOut())
+                        },
+                        label = "icon_count_anim"
+                    ) { count ->
+                        Text(
+                            text = "$count SILVER-GLASS ICONS",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            letterSpacing = 2.sp
+                        )
+                    }
+                }
             )
-
             Spacer(Modifier.height(4.dp))
-
-            AnimatedContent(
-                targetState = filteredIcons.size,
-                transitionSpec = {
-                    (slideInVertically { h -> h } + fadeIn()).togetherWith(slideOutVertically { h -> -h } + fadeOut())
-                },
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-                label = "icon_count_anim"
-            ) { count ->
-                Text(
-                    text = "$count SILVER-GLASS ICONS",
-                    color = Muted,
-                    fontSize = 10.sp,
-                    letterSpacing = 2.sp
-                )
-            }
-
-            Spacer(Modifier.height(20.dp))
 
             // Search Bar
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = { searchQuery = it },
+                onValueChange = { IconsStateManager.setSearchQuery(context, it) },
                 placeholder = { Text("Search 84 icons...", color = Muted, fontSize = 14.sp) },
                 leadingIcon = {
                     Icon(
@@ -225,7 +253,7 @@ fun IconsScreen() {
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
+                        IconButton(onClick = { IconsStateManager.setSearchQuery(context, "") }) {
                             Icon(Icons.Default.Close, contentDescription = "Clear", tint = Silver)
                         }
                     }
@@ -268,7 +296,7 @@ fun IconsScreen() {
                                 color = if (isSelected) Color.White.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.15f),
                                 shape = CircleShape
                             )
-                            .clickable { selectedCategory = cat }
+                            .clickable { IconsStateManager.setSelectedCategory(context, cat) }
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Text(
