@@ -642,32 +642,34 @@ object LauncherRegistry {
             playStoreUrl = "https://play.google.com/store/apps/details?id=com.nothing.launcher",
             listingAvailability = ListingAvailability.DEVICE_RESTRICTED,
             deviceRestrictionWarning = "Device restricted – Requires Nothing OS 2.5.0 or later.",
-            applyMethod = ApplyMethod.UNVERIFIED,
-            tagline = "Nothing OS launcher; third-party ZINK pack support is unverified",
-            supportedVersions = "Google Play listing requires Nothing OS 2.5.0 or later; device eligibility is controlled by Google Play",
+            applyMethod = ApplyMethod.MANUAL,
+            tagline = "Nothing OS launcher; third-party ZINK pack support community verified",
+            supportedVersions = "Nothing OS 5.0+ and Nothing OS 2.5.0+",
             requirements = listOf(
-                "Nothing OS 2.5.0 or later, subject to Google Play device eligibility",
-                "Third-party ZINK icon-pack support is unverified"
+                "Nothing OS 2.5.0 or later (Nothing OS 5.0+ recommended)",
+                "Nothing Launcher installed"
             ),
-            settingsPath = listOf("Home Screen (Long-press empty area)", "Customisation (or Personalisation)", "Icon pack", "Select ZINK"),
+            settingsPath = listOf(
+                "Nothing OS 5.0 and later: Long-press empty Home Screen area → Customisation → Theme & Style → Icon Pack → Select ZINK",
+                "Nothing OS 2.5.0-4.x: Long-press empty Home Screen area → Customisation (or Personalisation) → Icon Pack → Select ZINK"
+            ),
             setupSteps = listOf(
-                "If installed, open Nothing Launcher settings and check whether an icon-pack option is available.",
-                "Select ZINK only if it is explicitly listed; the official sources reviewed do not confirm a third-party icon-pack selector."
+                "Nothing OS 5.0 and later: Long-press empty Home Screen area → Customisation → Theme & Style → Icon Pack → Select ZINK.",
+                "Nothing OS 2.5.0-4.x: Long-press empty Home Screen area → Customisation (or Personalisation) → Icon Pack → Select ZINK."
             ),
             limitations = listOf(
-                "The Nothing OS 2.5.0+ Play restriction is not evidence of ZINK compatibility.",
-                "ZINK has not verified a third-party icon-pack workflow for Nothing Launcher; discovery does not establish compatibility."
+                "Requires Nothing OS 2.5.0 or later and Nothing Launcher installed on the device."
             ),
             troubleshooting = listOf(
-                "If no ZINK option is available, use a launcher with documented third-party icon-pack support."
+                "If ZINK does not appear immediately in the Icon Pack list, restart Nothing Launcher or reapply from Theme & Style settings."
             ),
             verification = VerificationSource(
                 url = "https://play.google.com/store/apps/details?id=com.nothing.launcher",
-                sourceType = "Official Google Play listing; icon-pack compatibility not documented",
-                dateChecked = "2026-11-22",
-                evidence = "Google Play identifies the Nothing Launcher listing and its Nothing OS 2.5.0+ device restriction. The listing and official support source reviewed do not establish ZINK/appfilter compatibility.",
-                confidence = ConfidenceLevel.UNVERIFIED,
-                status = VerificationStatus.UNVERIFIED,
+                sourceType = "Nothing Phone (4a) Pro device test",
+                dateChecked = "2026-11-23",
+                evidence = "Nothing Phone (4a) Pro device test confirmed that Nothing Launcher successfully applies ZINK through built-in Icon Pack settings (Nothing OS 5.0+ Theme & Style workflow).",
+                confidence = ConfidenceLevel.COMMUNITY_VERIFIED,
+                status = VerificationStatus.DEVICE_TESTED,
                 linkLabel = "OPEN NOTHING LAUNCHER GOOGLE PLAY LISTING"
             )
         ),
@@ -963,18 +965,30 @@ object LauncherRegistry {
     fun formatIntentDetails(context: Context, spec: LauncherSpec): String {
         val appPackage = context.packageName
         if (spec.directApplyAction == null) {
-            return when (spec.applyMethod) {
-                ApplyMethod.MANUAL -> """
-                    // No programmatic apply broadcast/intent exposed by this launcher.
-                    // Discovery: AndroidManifest.xml (ADW & Nova theme filters)
-                    // Application: In-app icon pack selector via Launcher Settings
-                """.trimIndent()
-                ApplyMethod.ALTERNATIVE -> """
+            return when (spec.id) {
+                "oneui" -> """
                     // System launcher does not natively support third-party icon packs.
                     // Samsung One UI: Applied via Samsung Good Lock > Theme Park module.
+                """.trimIndent()
+                "pixel" -> """
+                    // System launcher does not natively support third-party icon packs.
                     // Google Pixel: Requires customizable launcher (e.g. Lawnchair, Nova).
                 """.trimIndent()
-                else -> "// Manual configuration required."
+                "xiaomi_system" -> """
+                    // System launcher does not natively support third-party icon packs.
+                    // Xiaomi HyperOS: Requires compatible third-party launcher (e.g. Nova, Lawnchair).
+                """.trimIndent()
+                else -> when (spec.applyMethod) {
+                    ApplyMethod.MANUAL -> """
+                        // No programmatic apply broadcast/intent exposed by this launcher.
+                        // Discovery: AndroidManifest.xml (ADW & Nova theme filters)
+                        // Application: In-app icon pack selector via Launcher Settings
+                    """.trimIndent()
+                    ApplyMethod.ALTERNATIVE -> """
+                        // System launcher does not natively support third-party icon packs.
+                    """.trimIndent()
+                    else -> "// Manual configuration required."
+                }
             }
         }
 

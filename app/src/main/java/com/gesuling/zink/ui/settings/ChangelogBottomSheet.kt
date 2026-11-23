@@ -29,8 +29,8 @@ import com.gesuling.zink.ui.theme.LocalZinkColors
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
 
-// Structured metadata: update LATEST_PUBLISHED_VERSION upon official publication of v0.1.2
-const val LATEST_PUBLISHED_VERSION = "0.1.1"
+// Structured metadata: update LATEST_PUBLISHED_VERSION upon official publication of v0.1.3
+const val LATEST_PUBLISHED_VERSION = "0.1.2"
 
 fun compareVersions(v1: String, v2: String): Int {
     val parts1 = v1.removePrefix("v").split(".").map { it.toIntOrNull() ?: 0 }
@@ -62,9 +62,25 @@ data class ReleaseSection(
 
 val zinkReleaseHistory = listOf(
     ReleaseInfo(
+        version = "v0.1.3",
+        date = "23 November 2026",
+        isLatest = true,
+        summary = "Apply tab UI enhancements, robust system launcher icon resolution, interactive confidence status filters, and sort options.",
+        sections = listOf(
+            ReleaseSection(
+                title = "Apply Tab Enhancements",
+                bullets = listOf(
+                    "Robust package and activity icon resolution in LauncherAppIcon ensuring consistent icon rendering across Xiaomi, Nothing, and other OEM devices.",
+                    "Interactive and clickable Official, Community, and Unverified confidence status filter badges.",
+                    "Fully functional Sort By control supporting Default, Alphabetical (A–Z), Compatibility, and Availability sorting options."
+                )
+            )
+        )
+    ),
+    ReleaseInfo(
         version = "v0.1.2",
         date = "22 November 2026",
-        isLatest = true,
+        isLatest = false,
         summary = "Launcher registry refactoring, UI polish, and back navigation enhancements.",
         sections = listOf(
             ReleaseSection(
@@ -131,7 +147,7 @@ fun ChangelogBottomSheet(
 ) {
     val colors = LocalZinkColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val expandedVersions = remember { mutableStateOf(setOf("v0.1.2")) }
+    val expandedVersions = remember { mutableStateOf(emptySet<String>()) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -155,9 +171,11 @@ fun ChangelogBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
+                    val titleFont = com.gesuling.zink.ui.theme.LocalTitleFont.current.fontFamily
                     Text(
                         text = "RELEASE CHANGELOG",
                         color = Silver,
+                        fontFamily = titleFont,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Light,
                         letterSpacing = 3.sp

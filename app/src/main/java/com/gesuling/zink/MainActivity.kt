@@ -4,12 +4,18 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import com.gesuling.zink.update.ZinkUpdateManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -80,11 +86,31 @@ class MainActivity : ComponentActivity() {
         ApplyStateManager.restore(this)
         IconsStateManager.restore(this)
         WallpapersStateManager.restore(this)
-        enableEdgeToEdge()
+
+        ZinkUpdateManager.createNotificationChannel(this)
+        ZinkUpdateManager.schedulePeriodicCheck(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val release = ZinkUpdateManager.fetchLatestRelease()
+            if (release != null && !release.draft && !release.prerelease) {
+                if (ZinkUpdateManager.isNewVersionAvailable(applicationContext, release.tagName)) {
+                    if (!ZinkUpdateManager.isSuppressed(applicationContext, release.tagName)) {
+                        withContext(Dispatchers.Main) {
+                            ZinkUpdateManager.showUpdateNotification(applicationContext, release)
+                        }
+                    }
+                }
+            }
+        }
+
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
-        window.decorView.systemUiVisibility =
-            window.decorView.systemUiVisibility and
-                    android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
@@ -94,11 +120,15 @@ class MainActivity : ComponentActivity() {
             var isPureAmoled by remember {
                 mutableStateOf(ZinkPreferences.getPureAmoled(context))
             }
+            var titleFontOption by remember {
+                mutableStateOf(ZinkPreferences.getTitleFont(context))
+            }
             val zinkColors = if (isPureAmoled) AmoledBlackColors else GraphiteDarkColors
 
             CompositionLocalProvider(
                 LocalZinkColors provides zinkColors,
-                LocalPureAmoled provides isPureAmoled
+                LocalPureAmoled provides isPureAmoled,
+                LocalTitleFont provides titleFontOption
             ) {
                 ZinkTheme {
                     ZinkHomeScreen(
@@ -106,6 +136,11 @@ class MainActivity : ComponentActivity() {
                         onPureAmoledChange = { newVal ->
                             isPureAmoled = newVal
                             ZinkPreferences.setPureAmoled(context, newVal)
+                        },
+                        titleFontOption = titleFontOption,
+                        onTitleFontChange = { newFont ->
+                            titleFontOption = newFont
+                            ZinkPreferences.setTitleFont(context, newFont)
                         }
                     )
                 }
@@ -123,7 +158,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ZinkHomeScreen(
     isPureAmoled: Boolean,
-    onPureAmoledChange: (Boolean) -> Unit
+    onPureAmoledChange: (Boolean) -> Unit,
+    titleFontOption: TitleFontOption,
+    onTitleFontChange: (TitleFontOption) -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? android.app.Activity
@@ -253,9 +290,11 @@ fun ZinkHomeScreen(
 
                                         Spacer(Modifier.height(24.dp))
 
+                                        val titleFont = LocalTitleFont.current.fontFamily
                                         Text(
                                             text = "Z I N K",
                                             color = Silver,
+                                            fontFamily = titleFont,
                                             fontSize = 30.sp,
                                             fontWeight = FontWeight.Light,
                                             modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -266,6 +305,7 @@ fun ZinkHomeScreen(
                                         Text(
                                             text = "DARKNESS, REFINED.",
                                             color = Muted,
+                                            fontFamily = com.gesuling.zink.ui.theme.GeistFontFamily,
                                             fontSize = 10.sp,
                                             letterSpacing = 3.sp,
                                             modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -307,6 +347,8 @@ fun ZinkHomeScreen(
                                         Text(
                                             text = "EXPLORE",
                                             color = Silver,
+                                            fontFamily = com.gesuling.zink.ui.theme.GeistFontFamily,
+                                            fontWeight = FontWeight.Bold,
                                             fontSize = 13.sp,
                                             letterSpacing = 2.sp,
                                             modifier = Modifier.padding(horizontal = 22.dp)
@@ -337,9 +379,9 @@ fun ZinkHomeScreen(
                                                     }
                                                     .padding(18.dp)
                                             ) {
-                                                Text(title, color = Silver, fontSize = 15.sp)
+                                                Text(title, color = Silver, fontSize = 15.sp, fontFamily = com.gesuling.zink.ui.theme.GeistFontFamily, fontWeight = FontWeight.Bold)
                                                 Spacer(Modifier.height(5.dp))
-                                                Text(subtitle, color = Muted, fontSize = 12.sp)
+                                                Text(subtitle, color = Muted, fontSize = 12.sp, fontFamily = com.gesuling.zink.ui.theme.GeistFontFamily, fontWeight = FontWeight.Normal)
                                             }
                                         }
                                     }
@@ -434,6 +476,8 @@ fun ZinkHomeScreen(
                         },
                         isPureAmoled = isPureAmoled,
                         onPureAmoledChange = onPureAmoledChange,
+                        titleFontOption = titleFontOption,
+                        onTitleFontChange = onTitleFontChange,
                         onBackClick = { isSettingsOpen = false },
                         launcherRefreshVersion = launcherRefreshVersion,
                         onApplyToLauncherClick = {
@@ -485,7 +529,7 @@ fun GlassmorphicBottomNavigation(
                 spotColor = Color.Black.copy(alpha = 0.5f)
             )
             .clip(CircleShape)
-            .background(Color(0xF0141416))
+            .background(LocalZinkColors.current.glass)
             .border(
                 border = BorderStroke(
                     width = 1.dp,
@@ -626,10 +670,10 @@ fun SummaryCard(title: String, count: String, modifier: Modifier = Modifier) {
             },
             label = "card_count_anim"
         ) { targetCount ->
-            Text(targetCount, color = Silver, fontSize = 23.sp, fontWeight = FontWeight.Light)
+            Text(targetCount, color = Silver, fontSize = 23.sp, fontFamily = com.gesuling.zink.ui.theme.GeistFontFamily, fontWeight = FontWeight.Normal)
         }
         Spacer(Modifier.height(6.dp))
-        Text(title, color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
+        Text(title, color = Muted, fontSize = 9.sp, letterSpacing = 1.sp, fontFamily = com.gesuling.zink.ui.theme.GeistFontFamily, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -637,7 +681,12 @@ fun SummaryCard(title: String, count: String, modifier: Modifier = Modifier) {
 @Composable
 fun ZinkHomeScreenPreview() {
     ZinkTheme {
-        ZinkHomeScreen(isPureAmoled = false, onPureAmoledChange = {})
+        ZinkHomeScreen(
+            isPureAmoled = false,
+            onPureAmoledChange = {},
+            titleFontOption = com.gesuling.zink.ui.theme.TitleFontOption.DEFAULT,
+            onTitleFontChange = {}
+        )
     }
 }
 

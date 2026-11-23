@@ -21,21 +21,22 @@ data class ZinkColors(
 )
 
 val GraphiteDarkColors = ZinkColors(
-    background = Color(0xFF080808),
-    surface = Color(0xFF141418),
-    glass = Color(0xFF141418),
-    cardBackground = Color(0xFF141418)
+    background = Color(0xFF121212),
+    surface = Color(0xFF1A1A1A),
+    glass = Color(0xF01C1C20),
+    cardBackground = Color(0xFF1A1A1A)
 )
 
 val AmoledBlackColors = ZinkColors(
     background = Color(0xFF000000),
-    surface = Color(0xFF171717),
-    glass = Color(0xFF121212),
-    cardBackground = Color(0xFF171717)
+    surface = Color(0xFF141414),
+    glass = Color(0xF0121214),
+    cardBackground = Color(0xFF141414)
 )
 
 val LocalZinkColors = compositionLocalOf { GraphiteDarkColors }
 val LocalPureAmoled = compositionLocalOf { false }
+val LocalTitleFont = compositionLocalOf { TitleFontOption.DEFAULT }
 
 internal const val DEFAULT_HEADER_ARTWORK_ID = "Frieren"
 internal val HEADER_ARTWORK_IDS = setOf(DEFAULT_HEADER_ARTWORK_ID, "Obsidian", "Nocturne")
@@ -47,10 +48,11 @@ object ZinkPreferences {
     private const val PREF_NAME = "zink_theme_prefs"
     private const val KEY_PURE_AMOLED = "is_pure_amoled"
     private const val KEY_HEADER_ARTWORK = "home_header_artwork"
+    private const val KEY_TITLE_FONT = "title_font_option"
 
     fun getPureAmoled(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(KEY_PURE_AMOLED, false) // Default false (Graphite Dark)
+        return prefs.getBoolean(KEY_PURE_AMOLED, false)
     }
 
     fun setPureAmoled(context: Context, isPure: Boolean) {
@@ -73,6 +75,19 @@ object ZinkPreferences {
                 .apply()
         }
         return resolvedId
+    }
+
+    fun getTitleFont(context: Context): TitleFontOption {
+        val savedId = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_TITLE_FONT, null)
+        return TitleFontOption.fromId(savedId)
+    }
+
+    fun setTitleFont(context: Context, fontOption: TitleFontOption) {
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_TITLE_FONT, fontOption.id)
+            .apply()
     }
 }
 

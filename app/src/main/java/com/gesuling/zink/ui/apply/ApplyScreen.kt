@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -83,6 +84,17 @@ private val CardBorder = Color.White.copy(alpha = 0.08f)
 
 private val FilterOptions = listOf("All", "Direct Apply", "Manual Setup", "Installed", "System & Others")
 
+private fun android.graphics.drawable.Drawable.toSafeBitmap(width: Int = 192, height: Int = 192): Bitmap {
+    if (this is android.graphics.drawable.BitmapDrawable && bitmap != null) {
+        return Bitmap.createScaledBitmap(bitmap, width, height, true)
+    }
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    setBounds(0, 0, canvas.width, canvas.height)
+    draw(canvas)
+    return bitmap
+}
+
 @Composable
 private fun LauncherAppIcon(
     launcherId: String?,
@@ -93,21 +105,67 @@ private fun LauncherAppIcon(
     val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(initialValue = null, launcherId, packageName) {
         value = withContext(Dispatchers.IO) {
-            val installedIcon = packageName?.let { installedPackage ->
-                runCatching {
-                    context.packageManager.getApplicationIcon(installedPackage)
-                        .toBitmap(width = 192, height = 192)
-                }.getOrNull()
-            }
-            installedIcon ?: launcherId?.let { id ->
-                runCatching {
-                    val encoded = context.assets.open("launcher_icon_${id}.png.b64")
+            var icon: Bitmap? = null
+            val pm = context.packageManager
+
+            if (launcherId == "xiaomi_system") {
+                icon = runCatching {
+                    val encoded = context.assets.open("launcher_icon_xiaomi_system.png.b64")
                         .bufferedReader()
                         .use { it.readText() }
                     val bytes = Base64.decode(encoded, Base64.DEFAULT)
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 }.getOrNull()
             }
+            if (packageName != null) {
+                // 1. Try getApplicationIcon
+                icon = runCatching {
+                    val appInfo = pm.getApplicationInfo(packageName, 0)
+                    pm.getApplicationIcon(appInfo).toSafeBitmap(192, 192)
+                }.onFailure { e ->
+                    android.util.Log.d("ZinkIcon", "Package lookup / app icon failure for package '$packageName' (launcherId=$launcherId): ${e.javaClass.simpleName} - ${e.message}")
+                }.getOrNull()
+
+                // 2. Try HOME intent resolve info icon (critical for system home apps like com.miui.home)
+                if (icon == null) {
+                    icon = runCatching {
+                        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(packageName)
+                        val resolveInfo = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+                            ?: pm.queryIntentActivities(homeIntent, 0).firstOrNull()
+                        resolveInfo?.loadIcon(pm)?.toSafeBitmap(192, 192)
+                    }.onFailure { e ->
+                        android.util.Log.d("ZinkIcon", "HOME activity icon resolution failure for package '$packageName': ${e.javaClass.simpleName} - ${e.message}")
+                    }.getOrNull()
+                }
+
+                // 3. Try LAUNCHER intent getLaunchIntentForPackage
+                if (icon == null) {
+                    icon = runCatching {
+                        val launchIntent = pm.getLaunchIntentForPackage(packageName)
+                        launchIntent?.let { pm.getActivityIcon(it)?.toSafeBitmap(192, 192) }
+                    }.onFailure { e ->
+                        android.util.Log.d("ZinkIcon", "Launch intent icon resolution failure for package '$packageName': ${e.javaClass.simpleName} - ${e.message}")
+                    }.getOrNull()
+                }
+            }
+
+            // 4. Try asset fallback
+            if (icon == null && launcherId != null) {
+                icon = runCatching {
+                    val encoded = context.assets.open("launcher_icon_${launcherId}.png.b64")
+                        .bufferedReader()
+                        .use { it.readText() }
+                    val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }.onFailure { e ->
+                    android.util.Log.d("ZinkIcon", "Asset fallback failure for launcherId '$launcherId': ${e.javaClass.simpleName} - ${e.message}")
+                }.getOrNull()
+            }
+
+            if (icon == null) {
+                android.util.Log.e("ZinkIcon", "All icon resolution methods failed for packageName='$packageName', launcherId='$launcherId', description='$contentDescription'. Falling back to letter text.")
+            }
+            icon
         }
     }
 
@@ -163,18 +221,35 @@ private fun openGooglePlayListing(context: Context, httpsUrl: String) {
     }
 }
 
+enum class SortOption(val label: String) {
+    DEFAULT("Default"),
+    ALPHABETICAL("Alphabetical (A–Z)"),
+    COMPATIBILITY("Compatibility"),
+    AVAILABILITY("Availability")
+}
+
 object ApplyStateManager {
     private const val PREFS_NAME = "zink_apply_prefs"
     private const val KEY_SEARCH_QUERY = "search_query"
     private const val KEY_SELECTED_FILTER = "selected_filter"
+    private const val KEY_SELECTED_CONFIDENCE = "selected_confidence"
+    private const val KEY_SORT_OPTION = "sort_option"
 
     var searchQuery by mutableStateOf("")
     var selectedFilter by mutableStateOf("All")
+    var selectedConfidenceLevel by mutableStateOf<ConfidenceLevel?>(null)
+    var sortOption by mutableStateOf(SortOption.DEFAULT)
 
     fun restore(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         searchQuery = prefs.getString(KEY_SEARCH_QUERY, "") ?: ""
         selectedFilter = prefs.getString(KEY_SELECTED_FILTER, "All") ?: "All"
+        selectedConfidenceLevel = prefs.getString(KEY_SELECTED_CONFIDENCE, null)?.let { name ->
+            runCatching { ConfidenceLevel.valueOf(name) }.getOrNull()
+        }
+        sortOption = prefs.getString(KEY_SORT_OPTION, null)?.let { name ->
+            runCatching { SortOption.valueOf(name) }.getOrNull()
+        } ?: SortOption.DEFAULT
     }
 
     fun setSearchQuery(context: Context, query: String) {
@@ -193,9 +268,27 @@ object ApplyStateManager {
             .apply()
     }
 
+    fun toggleConfidenceLevel(context: Context, level: ConfidenceLevel) {
+        selectedConfidenceLevel = if (selectedConfidenceLevel == level) null else level
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SELECTED_CONFIDENCE, selectedConfidenceLevel?.name)
+            .apply()
+    }
+
+    fun setSortOption(context: Context, option: SortOption) {
+        sortOption = option
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SORT_OPTION, option.name)
+            .apply()
+    }
+
     fun resetForTesting() {
         searchQuery = ""
         selectedFilter = "All"
+        selectedConfidenceLevel = null
+        sortOption = SortOption.DEFAULT
     }
 }
 
@@ -212,6 +305,8 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
     var selectedLauncher by remember { mutableStateOf<LauncherRuntimeState?>(null) }
     val searchQuery = ApplyStateManager.searchQuery
     val selectedFilter = ApplyStateManager.selectedFilter
+    val selectedConfidence = ApplyStateManager.selectedConfidenceLevel
+    val sortOption = ApplyStateManager.sortOption
 
     val defaultLauncherState = launcherStates.firstOrNull { it.isDefault }
     val defaultLauncherName = defaultLauncherPkg?.let {
@@ -227,8 +322,8 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
     }
 
     // Filter and search logic
-    val filteredLaunchers = remember(launcherStates, searchQuery, selectedFilter) {
-        launcherStates.filter { state ->
+    val filteredLaunchers = remember(launcherStates, searchQuery, selectedFilter, selectedConfidence, sortOption) {
+        val filtered = launcherStates.filter { state ->
             val matchesSearch = searchQuery.isBlank() ||
                     state.spec.name.contains(searchQuery, ignoreCase = true) ||
                     state.spec.developer.contains(searchQuery, ignoreCase = true) ||
@@ -243,7 +338,47 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
                 else -> true
             }
 
-            matchesSearch && matchesFilter
+            val matchesConfidence = when (selectedConfidence) {
+                ConfidenceLevel.VERIFIED_OFFICIAL_DOCS,
+                ConfidenceLevel.VERIFIED_SOURCE_CODE,
+                ConfidenceLevel.VERIFIED_INTENT_SPEC -> {
+                    state.spec.verification.confidence == ConfidenceLevel.VERIFIED_OFFICIAL_DOCS ||
+                            state.spec.verification.confidence == ConfidenceLevel.VERIFIED_SOURCE_CODE ||
+                            state.spec.verification.confidence == ConfidenceLevel.VERIFIED_INTENT_SPEC
+                }
+                ConfidenceLevel.COMMUNITY_VERIFIED -> state.spec.verification.confidence == ConfidenceLevel.COMMUNITY_VERIFIED
+                ConfidenceLevel.UNVERIFIED -> state.spec.verification.confidence == ConfidenceLevel.UNVERIFIED
+                null -> true
+            }
+
+            matchesSearch && matchesFilter && matchesConfidence
+        }
+
+        when (sortOption) {
+            SortOption.ALPHABETICAL -> filtered.sortedBy { it.spec.name }
+            SortOption.COMPATIBILITY -> filtered.sortedBy {
+                when (it.spec.applyMethod) {
+                    ApplyMethod.DIRECT -> 0
+                    ApplyMethod.MANUAL -> 1
+                    ApplyMethod.ALTERNATIVE -> 2
+                    ApplyMethod.UNVERIFIED -> 3
+                }
+            }
+            SortOption.AVAILABILITY -> filtered.sortedWith(
+                compareByDescending<LauncherRuntimeState> { it.isInstalled }.thenBy { it.spec.name }
+            )
+            SortOption.DEFAULT -> filtered.sortedWith(
+                compareByDescending<LauncherRuntimeState> { it.isDefault }
+                    .thenByDescending { it.isInstalled }
+                    .thenBy {
+                        when (it.spec.applyMethod) {
+                            ApplyMethod.DIRECT -> 0
+                            ApplyMethod.MANUAL -> 1
+                            ApplyMethod.ALTERNATIVE -> 2
+                            ApplyMethod.UNVERIFIED -> 3
+                        }
+                    }
+            )
         }
     }
 
@@ -379,8 +514,8 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
             Spacer(Modifier.height(24.dp))
 
             // ── Section Title & Granular Confidence Summary ──
-            val confidenceBreakdown = remember(filteredLaunchers) {
-                LauncherRegistry.getConfidenceBreakdown(filteredLaunchers)
+            val confidenceBreakdown = remember(launcherStates) {
+                LauncherRegistry.getConfidenceBreakdown(launcherStates)
             }
 
             Column(
@@ -400,17 +535,75 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
                         letterSpacing = 2.sp,
                         fontWeight = FontWeight.Medium
                     )
-                    Text(
-                        text = "${filteredLaunchers.size} TOTAL",
-                        color = Muted,
-                        fontSize = 10.sp,
-                        letterSpacing = 1.sp
-                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "${filteredLaunchers.size} TOTAL",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            letterSpacing = 1.sp
+                        )
+
+                        var showSortMenu by remember { mutableStateOf(false) }
+                        Box {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color.White.copy(alpha = 0.06f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                                    .clickable { showSortMenu = true }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        text = "Sort: ${ApplyStateManager.sortOption.label}",
+                                        color = Silver,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Outlined.Search,
+                                        contentDescription = "Sort",
+                                        tint = Silver,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                                modifier = Modifier.background(colors.cardBackground)
+                            ) {
+                                SortOption.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = option.label,
+                                                color = if (ApplyStateManager.sortOption == option) Color.White else Silver,
+                                                fontSize = 12.sp
+                                            )
+                                        },
+                                        onClick = {
+                                            ApplyStateManager.setSortOption(context, option)
+                                            showSortMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
-                if (filteredLaunchers.isNotEmpty()) {
+                if (launcherStates.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
-                    LauncherConfidenceBadgesRow(confidenceBreakdown = confidenceBreakdown)
+                    LauncherConfidenceBadgesRow(
+                        confidenceBreakdown = confidenceBreakdown,
+                        selectedConfidence = ApplyStateManager.selectedConfidenceLevel,
+                        onToggleConfidence = { level ->
+                            ApplyStateManager.toggleConfidenceLevel(context, level)
+                        }
+                    )
                 }
             }
 
@@ -480,6 +673,8 @@ fun ApplyScreen(launcherRefreshVersion: Int = 0) {
 @Composable
 private fun LauncherConfidenceBadgesRow(
     confidenceBreakdown: LauncherRegistry.ConfidenceBreakdown,
+    selectedConfidence: ConfidenceLevel?,
+    onToggleConfidence: (ConfidenceLevel) -> Unit,
     modifier: Modifier = Modifier
 ) {
     FlowRow(
@@ -487,27 +682,41 @@ private fun LauncherConfidenceBadgesRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        confidenceBreakdown.counts.filter { it.value > 0 }.forEach { (level, count) ->
-            val badgeColor = when (level) {
-                ConfidenceLevel.VERIFIED_OFFICIAL_DOCS,
-                ConfidenceLevel.VERIFIED_SOURCE_CODE -> Color(0xFF6FBF8F)
-                ConfidenceLevel.VERIFIED_INTENT_SPEC,
-                ConfidenceLevel.COMMUNITY_VERIFIED -> Color(0xFFC4A872)
-                ConfidenceLevel.UNVERIFIED -> Muted
+        val officialCount = confidenceBreakdown.counts.entries
+            .filter { it.key == ConfidenceLevel.VERIFIED_OFFICIAL_DOCS || it.key == ConfidenceLevel.VERIFIED_SOURCE_CODE || it.key == ConfidenceLevel.VERIFIED_INTENT_SPEC }
+            .sumOf { it.value }
+        val communityCount = confidenceBreakdown.counts[ConfidenceLevel.COMMUNITY_VERIFIED] ?: 0
+        val unverifiedCount = confidenceBreakdown.counts[ConfidenceLevel.UNVERIFIED] ?: 0
+
+        val categories = listOf(
+            Triple(ConfidenceLevel.VERIFIED_OFFICIAL_DOCS, officialCount, Color(0xFF6FBF8F)),
+            Triple(ConfidenceLevel.COMMUNITY_VERIFIED, communityCount, Color(0xFFC4A872)),
+            Triple(ConfidenceLevel.UNVERIFIED, unverifiedCount, Muted)
+        )
+
+        categories.filter { it.second > 0 }.forEach { (level, count, badgeColor) ->
+            val isSelected = when (level) {
+                ConfidenceLevel.VERIFIED_OFFICIAL_DOCS -> {
+                    selectedConfidence == ConfidenceLevel.VERIFIED_OFFICIAL_DOCS ||
+                            selectedConfidence == ConfidenceLevel.VERIFIED_SOURCE_CODE ||
+                            selectedConfidence == ConfidenceLevel.VERIFIED_INTENT_SPEC
+                }
+                else -> selectedConfidence == level
             }
 
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
-                    .background(badgeColor.copy(alpha = 0.10f))
-                    .border(1.dp, badgeColor.copy(alpha = 0.22f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .background(if (isSelected) badgeColor else badgeColor.copy(alpha = 0.10f))
+                    .border(1.dp, badgeColor.copy(alpha = if (isSelected) 0.8f else 0.22f), RoundedCornerShape(6.dp))
+                    .clickable { onToggleConfidence(level) }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = "$count ${level.shortLabel.uppercase()}",
-                    color = badgeColor,
+                    color = if (isSelected) Color.Black else badgeColor,
                     fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     letterSpacing = 0.5.sp
                 )
             }
@@ -546,7 +755,7 @@ private fun DefaultLauncherHeroCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(CardBg)
+            .background(LocalZinkColors.current.cardBackground)
             .border(1.dp, CardBorder, RoundedCornerShape(20.dp))
             .padding(18.dp)
     ) {
@@ -574,22 +783,44 @@ private fun DefaultLauncherHeroCard(
             Spacer(Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "CURRENT DEFAULT LAUNCHER",
-                        color = Muted,
-                        fontSize = 9.sp,
-                        letterSpacing = 1.5.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Spacer(Modifier.height(3.dp))
                 Text(
-                    text = defaultName,
-                    color = Silver,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium
+                    text = "CURRENT DEFAULT LAUNCHER",
+                    color = Muted,
+                    fontSize = 9.sp,
+                    letterSpacing = 1.5.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
+                Spacer(Modifier.height(3.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = defaultName,
+                        color = Silver,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.White.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "DEFAULT",
+                            color = Silver,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = methodText,
@@ -751,7 +982,7 @@ private fun LauncherDirectoryCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(CardBg)
+            .background(LocalZinkColors.current.cardBackground)
             .border(1.dp, CardBorder, RoundedCornerShape(18.dp))
             .glowingBorderOnPress(RoundedCornerShape(18.dp))
             .pressScale(onClick = onOpenGuide)
@@ -791,23 +1022,6 @@ private fun LauncherDirectoryCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-
-                if (state.isDefault) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "DEFAULT",
-                            color = Silver,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                    }
-                }
             }
 
             Spacer(Modifier.height(3.dp))
@@ -1132,7 +1346,7 @@ private fun LauncherDetailSheet(
                     .fillMaxHeight(0.88f)
                     .offset { IntOffset(0, max(0f, sheetOffset.value).roundToInt()) }
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(Color(0xFF0E0E0E))
+                    .background(LocalZinkColors.current.cardBackground)
                     .border(
                         1.dp,
                         Color.White.copy(alpha = 0.12f),
@@ -1335,7 +1549,42 @@ private fun LauncherDetailSheet(
                 // ── 4. Settings Navigation Path (Option 3: Vertical Step List) ──
                 DetailSectionHeader("SETTINGS NAVIGATION PATH")
                 Spacer(Modifier.height(8.dp))
-                VerticalStepList(steps = spec.settingsPath)
+                if (spec.id == "nothing") {
+                    Text(
+                        text = "Nothing OS 5.0 and later",
+                        color = Silver,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    VerticalStepList(
+                        steps = listOf(
+                            "Home Screen (Long-press empty area)",
+                            "Customisation",
+                            "Theme & Style",
+                            "Icon Pack",
+                            "Select ZINK"
+                        )
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        text = "Nothing OS 2.5.0–4.x",
+                        color = Silver,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    VerticalStepList(
+                        steps = listOf(
+                            "Home Screen (Long-press empty area)",
+                            "Customisation (or Personalisation)",
+                            "Icon Pack",
+                            "Select ZINK"
+                        )
+                    )
+                } else {
+                    VerticalStepList(steps = spec.settingsPath)
+                }
 
                 Spacer(Modifier.height(18.dp))
 
@@ -1587,11 +1836,12 @@ private fun DetailSectionHeader(text: String) {
 
 @Composable
 private fun InfoBox(content: @Composable ColumnScope.() -> Unit) {
+    val cardBg = LocalZinkColors.current.cardBackground
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF161616))
+            .background(cardBg)
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(14.dp))
             .padding(14.dp),
         content = content
@@ -1600,7 +1850,8 @@ private fun InfoBox(content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 private fun ActionNotice(text: String, isWarning: Boolean = false) {
-    val background = if (isWarning) Color(0xFF302718) else Color(0xFF161616)
+    val cardBg = LocalZinkColors.current.cardBackground
+    val background = if (isWarning) Color(0xFF302718) else cardBg
     val foreground = if (isWarning) Color(0xFFFFD27A) else Color(0xFFB8B8BE)
     val outline = if (isWarning) Color(0xFFFFD27A).copy(alpha = 0.28f) else Color.White.copy(alpha = 0.06f)
     Column(

@@ -517,7 +517,7 @@ fun RequestsScreen() {
                     .fillMaxWidth()
                     .height(46.dp)
                     .clip(RoundedCornerShape(23.dp))
-                    .background(Color(0xFF141418))
+                    .background(colors.cardBackground)
                     .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(23.dp))
                     .padding(3.dp),
                 verticalAlignment = Alignment.CenterVertically

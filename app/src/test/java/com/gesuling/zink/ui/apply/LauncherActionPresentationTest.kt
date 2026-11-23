@@ -89,7 +89,7 @@ class LauncherActionPresentationTest {
         assertEquals(ApplyMethod.UNVERIFIED, LauncherRegistry.launchers.single { it.id == "apex" }.applyMethod)
         assertEquals(ApplyMethod.UNVERIFIED, LauncherRegistry.launchers.single { it.id == "apex_airborne" }.applyMethod)
         assertEquals(ApplyMethod.MANUAL, LauncherRegistry.launchers.single { it.id == "lawnchair" }.applyMethod)
-        assertEquals(ApplyMethod.UNVERIFIED, LauncherRegistry.launchers.single { it.id == "nothing" }.applyMethod)
+        assertEquals(ApplyMethod.MANUAL, LauncherRegistry.launchers.single { it.id == "nothing" }.applyMethod)
         assertEquals(ApplyMethod.ALTERNATIVE, LauncherRegistry.launchers.single { it.id == "xiaomi_system" }.applyMethod)
     }
 
@@ -280,9 +280,9 @@ class LauncherActionPresentationTest {
         assertEquals(11, breakdown.counts[ConfidenceLevel.VERIFIED_OFFICIAL_DOCS])
         assertEquals(0, breakdown.counts[ConfidenceLevel.VERIFIED_SOURCE_CODE])
         assertEquals(0, breakdown.counts[ConfidenceLevel.VERIFIED_INTENT_SPEC])
-        assertEquals(1, breakdown.counts[ConfidenceLevel.COMMUNITY_VERIFIED])
-        assertEquals(3, breakdown.counts[ConfidenceLevel.UNVERIFIED])
-        assertEquals("11 OFFICIAL · 1 COMMUNITY · 3 UNVERIFIED", breakdown.summaryLabel())
+        assertEquals(2, breakdown.counts[ConfidenceLevel.COMMUNITY_VERIFIED])
+        assertEquals(2, breakdown.counts[ConfidenceLevel.UNVERIFIED])
+        assertEquals("11 OFFICIAL · 2 COMMUNITY · 2 UNVERIFIED", breakdown.summaryLabel())
     }
 
     @Test
@@ -299,11 +299,11 @@ class LauncherActionPresentationTest {
         assertEquals(0, directBreakdown.counts[ConfidenceLevel.UNVERIFIED])
         assertEquals("1 OFFICIAL · 1 COMMUNITY", directBreakdown.summaryLabel())
 
-        val unverifiedStates = listOf(state("xiaomi_system"), state("nothing"), state("apex_airborne"))
+        val unverifiedStates = listOf(state("xiaomi_system"), state("apex_airborne"))
         val unverifiedBreakdown = LauncherRegistry.getConfidenceBreakdown(unverifiedStates)
-        assertEquals(3, unverifiedBreakdown.total)
-        assertEquals(3, unverifiedBreakdown.counts[ConfidenceLevel.UNVERIFIED])
-        assertEquals("3 UNVERIFIED", unverifiedBreakdown.summaryLabel())
+        assertEquals(2, unverifiedBreakdown.total)
+        assertEquals(2, unverifiedBreakdown.counts[ConfidenceLevel.UNVERIFIED])
+        assertEquals("2 UNVERIFIED", unverifiedBreakdown.summaryLabel())
     }
 
     @Test
@@ -313,7 +313,7 @@ class LauncherActionPresentationTest {
         assertEquals("Official", state("pixel").confidenceLabel)
         assertEquals("Community", state("action").confidenceLabel)
         assertEquals("Unverified", state("xiaomi_system").confidenceLabel)
-        assertEquals("Unverified", state("nothing").confidenceLabel)
+        assertEquals("Community", state("nothing").confidenceLabel)
         assertEquals("Unverified", state("apex_airborne").confidenceLabel)
     }
 
@@ -326,7 +326,7 @@ class LauncherActionPresentationTest {
 
         val manualSetup = allStates.filter { it.spec.applyMethod == ApplyMethod.MANUAL }
         assertEquals(
-            setOf("nova", "smart", "adw", "lawnchair", "hyperion", "microsoft", "kvaesitso"),
+            setOf("nova", "smart", "adw", "nothing", "lawnchair", "hyperion", "microsoft", "kvaesitso"),
             manualSetup.map { it.spec.id }.toSet()
         )
 
@@ -334,7 +334,7 @@ class LauncherActionPresentationTest {
             it.spec.applyMethod == ApplyMethod.ALTERNATIVE || it.spec.applyMethod == ApplyMethod.UNVERIFIED
         }
         assertEquals(
-            setOf("xiaomi_system", "pixel", "nothing", "apex", "apex_airborne", "oneui"),
+            setOf("xiaomi_system", "pixel", "apex", "apex_airborne", "oneui"),
             systemAndOthers.map { it.spec.id }.toSet()
         )
     }

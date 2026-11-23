@@ -18,10 +18,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gesuling.zink.ui.anim.pressScale
+import com.gesuling.zink.ui.theme.GeistFontFamily
+import com.gesuling.zink.ui.theme.LocalTitleFont
 
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
@@ -38,8 +42,13 @@ fun ZinkPageHeader(
             Text(
                 text = subtitle,
                 color = Muted,
+                fontFamily = GeistFontFamily,
                 fontSize = 10.sp,
-                letterSpacing = 2.sp
+                letterSpacing = 2.sp,
+                style = TextStyle(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    lineHeight = 14.sp
+                )
             )
         },
         modifier = modifier
@@ -52,6 +61,7 @@ fun ZinkPageHeader(
     subtitleContent: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val titleFont = LocalTitleFont.current.fontFamily
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -63,9 +73,14 @@ fun ZinkPageHeader(
         Text(
             text = title,
             color = Silver,
+            fontFamily = titleFont,
             fontSize = 24.sp,
             fontWeight = FontWeight.Light,
-            letterSpacing = 4.sp
+            letterSpacing = 4.sp,
+            style = TextStyle(
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                lineHeight = 28.sp
+            )
         )
         Spacer(Modifier.height(4.dp))
         subtitleContent()
@@ -83,12 +98,13 @@ fun ZinkToolbarHeader(
     isSettingsOpen: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val titleFont = LocalTitleFont.current.fontFamily
     Box(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .height(48.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .heightIn(min = 52.dp),
         contentAlignment = Alignment.Center
     ) {
         if (onBackClick != null) {
@@ -141,21 +157,33 @@ fun ZinkToolbarHeader(
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.align(Alignment.Center)
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(vertical = 2.dp)
         ) {
             Text(
                 text = title,
                 color = Silver,
+                fontFamily = titleFont,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Light,
-                letterSpacing = 4.sp
+                letterSpacing = 4.sp,
+                style = TextStyle(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    lineHeight = 28.sp
+                )
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = subtitle,
                 color = Muted,
+                fontFamily = GeistFontFamily,
                 fontSize = 10.sp,
-                letterSpacing = 2.sp
+                letterSpacing = 2.sp,
+                style = TextStyle(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    lineHeight = 14.sp
+                )
             )
         }
     }

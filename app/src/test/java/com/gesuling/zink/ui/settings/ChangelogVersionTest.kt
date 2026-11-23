@@ -9,18 +9,19 @@ class ChangelogVersionTest {
 
     @Test
     fun versionComparisonWorksCorrectly() {
-        assertEquals(0, compareVersions("v0.1.2", "0.1.2"))
-        assertEquals(1, compareVersions("v0.1.2", "v0.1.1"))
-        assertEquals(-1, compareVersions("0.1.1", "v0.1.2"))
-        assertEquals(0, compareVersions("0.1.1", "0.1.1"))
+        assertEquals(0, compareVersions("v0.1.3", "0.1.3"))
+        assertEquals(1, compareVersions("v0.1.3", "v0.1.2"))
+        assertEquals(-1, compareVersions("0.1.2", "v0.1.3"))
+        assertEquals(0, compareVersions("0.1.2", "0.1.2"))
     }
 
     @Test
     fun releasePublishedStatusDistinguishesPublishedVsPlanned() {
         assertTrue(isReleasePublished("v0.1.1"))
-        assertTrue(isReleasePublished("0.1.1"))
+        assertTrue(isReleasePublished("v0.1.2"))
+        assertTrue(isReleasePublished("0.1.2"))
 
-        assertFalse(isReleasePublished("v0.1.2"))
         assertFalse(isReleasePublished("v0.1.3"))
+        assertFalse(isReleasePublished("v0.1.4"))
     }
 }

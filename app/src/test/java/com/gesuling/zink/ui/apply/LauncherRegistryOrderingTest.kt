@@ -31,7 +31,7 @@ class LauncherRegistryOrderingTest {
         assertEquals(ApplyMethod.MANUAL, methods["adw"])
         assertEquals(ApplyMethod.UNVERIFIED, methods["apex"])
         assertEquals(ApplyMethod.UNVERIFIED, methods["apex_airborne"])
-        assertEquals(ApplyMethod.UNVERIFIED, methods["nothing"])
+        assertEquals(ApplyMethod.MANUAL, methods["nothing"])
         assertEquals(ApplyMethod.MANUAL, methods["lawnchair"])
         assertEquals(ApplyMethod.MANUAL, methods["hyperion"])
         assertEquals(ApplyMethod.MANUAL, methods["microsoft"])

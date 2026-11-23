@@ -16,27 +16,25 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.gesuling.zink.ui.anim.glowingBorderOnPress
 import com.gesuling.zink.ui.anim.pressScale
 import com.gesuling.zink.ui.apply.LauncherRegistry
-import com.gesuling.zink.ui.theme.LocalZinkColors
 import com.gesuling.zink.ui.components.ZinkToolbarHeader
+import com.gesuling.zink.ui.theme.LocalZinkColors
+import com.gesuling.zink.ui.theme.TitleFontOption
 import com.gesuling.zink.ui.wallpapers.WallpaperBitmapCache
 import com.gesuling.zink.ui.wallpapers.WallpaperDownloadQuality
 import com.gesuling.zink.ui.wallpapers.WallpaperQualityPreferences
@@ -89,8 +87,9 @@ fun formatBytes(bytes: Long): String {
 
 private fun currentDefaultLauncherSummary(context: Context): String {
     val packageName = LauncherRegistry.detectDefaultLauncherPackage(context)
-        ?: return "No default HOME launcher selected"
-    return "${LauncherRegistry.getApplicationLabel(context, packageName)} · $packageName"
+        ?: return "Apply ZINK icons to your default launcher."
+    val label = LauncherRegistry.getApplicationLabel(context, packageName)
+    return "Apply ZINK icons to $label."
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -100,6 +99,8 @@ fun SettingsScreen(
     onHeaderArtworkChange: (String) -> Unit,
     isPureAmoled: Boolean,
     onPureAmoledChange: (Boolean) -> Unit,
+    titleFontOption: TitleFontOption = TitleFontOption.DEFAULT,
+    onTitleFontChange: (TitleFontOption) -> Unit = {},
     onBackClick: () -> Unit,
     onApplyToLauncherClick: () -> Unit,
     launcherRefreshVersion: Int = 0,
@@ -124,9 +125,9 @@ fun SettingsScreen(
     var showChangelog by remember { mutableStateOf(false) }
     val versionName = remember(context) {
         try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.1.2"
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.1.3"
         } catch (_: Exception) {
-            "0.1.2"
+            "0.1.3"
         }
     }
 
@@ -136,8 +137,7 @@ fun SettingsScreen(
             .background(colors.background)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
+            modifier = Modifier.fillMaxSize()
         ) {
             ZinkToolbarHeader(
                 title = "SETTINGS",
@@ -156,237 +156,303 @@ fun SettingsScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
             ) {
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(16.dp))
 
                 // 1. APPEARANCE Group
-            SettingsSectionHeader("APPEARANCE")
-            Spacer(Modifier.height(10.dp))
+                SettingsSectionHeader("APPEARANCE")
+                Spacer(Modifier.height(8.dp))
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(colors.cardBackground)
-                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(20.dp))
-            ) {
-                // Row 1: Pure AMOLED Black
-                SettingsSwitchRow(
-                    title = "Pure AMOLED Black",
-                    subtitle = "Use a true #000000 black background for AMOLED displays",
-                    checked = isPureAmoled,
-                    onCheckedChange = onPureAmoledChange
-                )
-
-                SettingsDivider()
-
-                // Row 2: Static fallback icon scale from appfilter.xml
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Unthemed Icon Scale", color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            "Static pack fallback used by compatible launchers",
-                            color = Muted,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    Spacer(Modifier.width(12.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0x22FFFFFF))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text("0.74×", color = Silver, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-
-                SettingsDivider()
-
-                // Row 3: Home Header Artwork (Segmented Choice)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(colors.cardBackground)
+                        .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
                 ) {
-                    Text("Home Header Artwork", color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(12.dp))
+                    // Row 1: Pure AMOLED Black
+                    SettingsSwitchRow(
+                        title = "Pure AMOLED Black",
+                        subtitle = "Enable pure black backgrounds.",
+                        checked = isPureAmoled,
+                        onCheckedChange = onPureAmoledChange
+                    )
+
+                    SettingsDivider()
+
+                    // Row 2: Unthemed Icon Scale
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        listOf("Frieren", "Obsidian", "Nocturne").forEach { style ->
-                            val isSelected = headerArtwork == style
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(40.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(if (isSelected) Color(0xFF282830) else Color(0x11FFFFFF))
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isSelected) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
-                                        shape = RoundedCornerShape(16.dp)
-                                    )
-                                    .clickable { onHeaderArtworkChange(style) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = style,
-                                    color = if (isSelected) Color.White else Muted,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Unthemed Icon Scale", color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "Adjust icon size in unsupported launchers.",
+                                color = Muted,
+                                fontSize = 12.sp
+                            )
                         }
-                    }
-                }
-            }
 
-            Spacer(Modifier.height(28.dp))
+                        Spacer(Modifier.width(12.dp))
 
-            // 2. LAUNCHER & ICONS Group
-            SettingsSectionHeader("LAUNCHER & ICONS")
-            Spacer(Modifier.height(10.dp))
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(colors.cardBackground)
-                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(20.dp))
-            ) {
-                // Row 1: Apply to Launcher
-                SettingsClickableRow(
-                    title = "Apply to Launcher",
-                    subtitle = currentLauncherSummary,
-                    trailing = {
-                        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Muted)
-                    },
-                    onClick = {
-                        currentLauncherSummary = currentDefaultLauncherSummary(context)
-                        onApplyToLauncherClick()
-                    }
-                )
-
-                SettingsDivider()
-
-                // Row 2: Wallpaper Download Quality
-                SettingsClickableRow(
-                    title = "Wallpaper Download Quality",
-                    subtitle = "Tap to switch resolution target",
-                    trailing = {
-                        Text(wallpaperQuality.label, color = Silver, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    },
-                    onClick = {
-                        wallpaperQuality = if (wallpaperQuality == WallpaperDownloadQuality.ORIGINAL) {
-                            WallpaperDownloadQuality.FHD_1080P
-                        } else {
-                            WallpaperDownloadQuality.ORIGINAL
-                        }
-                        WallpaperQualityPreferences.set(context, wallpaperQuality)
-                        Toast.makeText(context, "Wallpaper quality: ${wallpaperQuality.label}", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-
-            Spacer(Modifier.height(28.dp))
-
-            // 3. STORAGE & ABOUT Group
-            SettingsSectionHeader("STORAGE & ABOUT")
-            Spacer(Modifier.height(10.dp))
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(colors.cardBackground)
-                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(20.dp))
-            ) {
-                // Row 1: Clear Icon Cache
-                SettingsClickableRow(
-                    title = "Clear Icon Cache",
-                    subtitle = "Free up cached bitmap memory & disk cache",
-                    trailing = {
-                        Text("Clear", color = Silver, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    },
-                    onClick = {
-                        val result = ZinkCacheManager.clearCaches(context)
-                        val ramText = formatBytes(result.ramBytes)
-                        val diskText = formatBytes(result.diskBytes)
-                        if (result.totalBytes > 0) {
-                            Toast.makeText(
-                                context,
-                                "Cleared $ramText RAM cache and $diskText disk cache.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            Toast.makeText(
-                                context,
-                                "Cache is already empty (0 KB cleared).",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                )
-
-                SettingsDivider()
-
-                // Row 2: App Version
-                SettingsClickableRow(
-                    title = "App Version",
-                    subtitle = "Zink Version & Release History",
-                    trailing = {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(Color(0x22FFFFFF))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
-                            Text("v$versionName (API 37)", color = Silver, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("0.74×", color = Silver, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
-                    },
-                    onClick = {
-                        showChangelog = true
                     }
-                )
 
-                SettingsDivider()
+                    SettingsDivider()
 
-                // Row 3: Developer Information
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Developer Info", color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            text = "Created by Gesuling",
-                            color = Silver,
-                            fontSize = 12.sp,
-                            textDecoration = TextDecoration.Underline,
-                            modifier = Modifier.clickable {
-                                context.startActivity(
-                                    Intent(
-                                        Intent.ACTION_VIEW,
-                                        Uri.parse("https://github.com/Gesuling/Zink")
+                    // Row 3: Home Header Artwork
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Text("Home Header Artwork", color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("Frieren", "Obsidian", "Nocturne").forEach { style ->
+                                val isSelected = headerArtwork == style
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(36.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(if (isSelected) Color(0xFF282830) else Color(0x11FFFFFF))
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isSelected) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable { onHeaderArtworkChange(style) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = style,
+                                        color = if (isSelected) Color.White else Muted,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                                     )
-                                )
+                                }
                             }
-                        )
+                        }
+                    }
+
+                    SettingsDivider()
+
+                    // Row 4: Title Font Style
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Text("Title Font Style", color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TitleFontOption.entries.forEach { option ->
+                                val isSelected = titleFontOption == option
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(36.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(if (isSelected) Color(0xFF282830) else Color(0x11FFFFFF))
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isSelected) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable { onTitleFontChange(option) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = option.label,
+                                        color = if (isSelected) Color.White else Muted,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-            }
+
+                Spacer(Modifier.height(20.dp))
+
+                // 2. LAUNCHER & ICONS Group
+                SettingsSectionHeader("LAUNCHER & ICONS")
+                Spacer(Modifier.height(8.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(colors.cardBackground)
+                        .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
+                ) {
+                    // Row 1: Apply to Launcher
+                    SettingsClickableRow(
+                        title = "Apply to Launcher",
+                        subtitle = currentLauncherSummary,
+                        trailing = {
+                            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Muted)
+                        },
+                        onClick = {
+                            currentLauncherSummary = currentDefaultLauncherSummary(context)
+                            onApplyToLauncherClick()
+                        }
+                    )
+
+                    SettingsDivider()
+
+                    // Row 2: Wallpaper Download Quality
+                    SettingsClickableRow(
+                        title = "Wallpaper Download Quality",
+                        subtitle = "Target resolution for downloaded wallpapers",
+                        trailing = {
+                            Text(wallpaperQuality.label, color = Silver, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        },
+                        onClick = {
+                            wallpaperQuality = if (wallpaperQuality == WallpaperDownloadQuality.ORIGINAL) {
+                                WallpaperDownloadQuality.FHD_1080P
+                            } else {
+                                WallpaperDownloadQuality.ORIGINAL
+                            }
+                            WallpaperQualityPreferences.set(context, wallpaperQuality)
+                            Toast.makeText(context, "Wallpaper quality: ${wallpaperQuality.label}", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+
+                    SettingsDivider()
+
+                    // Row 3: Clear Icon Cache
+                    SettingsClickableRow(
+                        title = "Clear Icon Cache",
+                        subtitle = "Remove cached icons to free up storage.",
+                        trailing = {
+                            Icon(
+                                imageVector = Icons.Outlined.DeleteOutline,
+                                contentDescription = "Clear Cache",
+                                tint = Silver,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            val result = ZinkCacheManager.clearCaches(context)
+                            val ramText = formatBytes(result.ramBytes)
+                            val diskText = formatBytes(result.diskBytes)
+                            if (result.totalBytes > 0) {
+                                Toast.makeText(
+                                    context,
+                                    "Cleared $ramText RAM cache and $diskText disk cache.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Cache is already empty (0 KB cleared).",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    )
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // 3. ABOUT Group
+                SettingsSectionHeader("ABOUT")
+                Spacer(Modifier.height(8.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(colors.cardBackground)
+                        .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
+                ) {
+                    // Row 1: App Version (Informational)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("App Version", color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Spacer(Modifier.height(2.dp))
+                            Text("Current installed application version", color = Muted, fontSize = 12.sp)
+                        }
+
+                        Spacer(Modifier.width(12.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0x22FFFFFF))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text("v$versionName", color = Silver, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    SettingsDivider()
+
+                    // Row 2: Changelogs
+                    SettingsClickableRow(
+                        title = "Changelogs",
+                        subtitle = "Explore version history and updates.",
+                        trailing = {
+                            Icon(
+                                imageVector = Icons.Outlined.ChevronRight,
+                                contentDescription = "Changelogs",
+                                tint = Muted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            showChangelog = true
+                        }
+                    )
+
+                    SettingsDivider()
+
+                    // Row 3: GitHub Repository
+                    SettingsClickableRow(
+                        title = "GitHub Repository",
+                        subtitle = "View source code & releases",
+                        trailing = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                                contentDescription = "GitHub Repository",
+                                tint = Silver,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://github.com/Gesuling/Zink")
+                                )
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -398,12 +464,14 @@ fun SettingsScreen(
 
 @Composable
 fun SettingsSectionHeader(text: String) {
+    val titleFont = com.gesuling.zink.ui.theme.LocalTitleFont.current.fontFamily
     Text(
         text = text,
         color = Muted,
+        fontFamily = titleFont,
         fontSize = 11.sp,
         letterSpacing = 2.sp,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(start = 6.dp)
     )
 }
@@ -427,12 +495,12 @@ fun SettingsSwitchRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(18.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.height(2.dp))
             Text(subtitle, color = Muted, fontSize = 12.sp)
         }
 
@@ -461,14 +529,13 @@ fun SettingsClickableRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .glowingBorderOnPress(RoundedCornerShape(0.dp))
             .pressScale(onClick = onClick)
-            .padding(18.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = Silver, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.height(2.dp))
             Text(subtitle, color = Muted, fontSize = 12.sp)
         }
 
