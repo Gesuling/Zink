@@ -62,7 +62,7 @@ val zinkReleaseHistory = listOf(
         version = "v0.1.4",
         date = "23 November 2026",
         isLatest = true,
-        summary = "What's New — v0.1.4: Automatic updates, NDot 55/57 fonts, AMOLED/Gray modes, Xiaomi System Launcher, and Settings UI refinements.",
+        summary = "What's New v0.1.4: Automatic updates, NDot 55/57 fonts, AMOLED/Gray modes, Xiaomi System Launcher, and Settings UI refinements.",
         sections = listOf(
             ReleaseSection(
                 title = "Added",
