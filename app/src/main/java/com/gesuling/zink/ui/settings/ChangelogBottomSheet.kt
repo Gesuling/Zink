@@ -4,7 +4,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -12,8 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,8 +26,8 @@ import com.gesuling.zink.ui.theme.LocalZinkColors
 private val Silver = Color(0xFFE0E0E0)
 private val Muted = Color(0xFF888888)
 
-// Structured metadata: update LATEST_PUBLISHED_VERSION upon official publication of v0.1.3
-const val LATEST_PUBLISHED_VERSION = "0.1.2"
+// Structured metadata: update LATEST_PUBLISHED_VERSION upon official publication of v0.1.4
+const val LATEST_PUBLISHED_VERSION = "0.1.4"
 
 fun compareVersions(v1: String, v2: String): Int {
     val parts1 = v1.removePrefix("v").split(".").map { it.toIntOrNull() ?: 0 }
@@ -62,9 +59,46 @@ data class ReleaseSection(
 
 val zinkReleaseHistory = listOf(
     ReleaseInfo(
-        version = "v0.1.3",
+        version = "v0.1.4",
         date = "23 November 2026",
         isLatest = true,
+        summary = "What's New — v0.1.4: Automatic updates, NDot 55/57 fonts, AMOLED/Gray modes, Xiaomi System Launcher, and Settings UI refinements.",
+        sections = listOf(
+            ReleaseSection(
+                title = "Added",
+                bullets = listOf(
+                    "Automatic app updates and notifications.",
+                    "NDOT 55 and NDOT 57 font options.",
+                    "AMOLED Black and Gray Mode.",
+                    "Xiaomi HyperOS System Launcher support.",
+                    "Expanded launcher support to 15 launchers."
+                )
+            ),
+            ReleaseSection(
+                title = "Improved",
+                bullets = listOf(
+                    "Refined Home, Requests, and Settings UI.",
+                    "Improved typography and layout consistency.",
+                    "Updated launcher compatibility and verification details.",
+                    "Refined launcher-specific intent instructions.",
+                    "Improved icon cache management."
+                )
+            ),
+            ReleaseSection(
+                title = "Fixed",
+                bullets = listOf(
+                    "Status bar icon contrast and appearance.",
+                    "Xiaomi launcher icon loading.",
+                    "Incorrect Samsung and Pixel intent instructions appearing under other launchers.",
+                    "Obsolete update testing elements."
+                )
+            )
+        )
+    ),
+    ReleaseInfo(
+        version = "v0.1.3",
+        date = "23 November 2026",
+        isLatest = false,
         summary = "Apply tab UI enhancements, robust system launcher icon resolution, interactive confidence status filters, and sort options.",
         sections = listOf(
             ReleaseSection(
@@ -124,9 +158,8 @@ val zinkReleaseHistory = listOf(
                 )
             ),
             ReleaseSection(
-                title = "Apply & Launcher Registry",
+                title = "Launcher Compatibility",
                 bullets = listOf(
-                    "Dynamic PackageManager launcher discovery for ACTION_MAIN/CATEGORY_HOME.",
                     "Curated setup guides and compatibility for 15 major launchers."
                 )
             ),
@@ -222,10 +255,10 @@ fun ChangelogBottomSheet(
                         }
                     }
                 )
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(14.dp))
             }
 
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(32.dp))
         }
     }
 }
@@ -247,14 +280,14 @@ fun ReleaseCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(colors.cardBackground)
             .border(
                 width = 1.dp,
                 color = if (release.isLatest) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.10f),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(18.dp)
             )
-            .clickable(onClick = onToggle)
+            .pressScale(onClick = onToggle)
             .padding(18.dp)
     ) {
         Row(
@@ -272,90 +305,90 @@ fun ReleaseCard(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
                 )
+
                 if (release.isLatest) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0x33FFFFFF))
-                            .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                            .background(Color.White.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = "CURRENT",
                             color = Silver,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
                     }
                 }
             }
 
-            Icon(
-                imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                contentDescription = if (isExpanded) "Collapse" else "Expand",
-                tint = Muted,
-                modifier = Modifier.size(20.dp)
+            Text(
+                text = dateDisplay,
+                color = Muted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium
             )
         }
 
         Spacer(Modifier.height(14.dp))
 
         Text(
-            text = dateDisplay,
-            color = Muted,
-            fontSize = 12.sp
-        )
-
-        Spacer(Modifier.height(8.dp))
-        Text(
             text = release.summary,
-            color = Muted,
-            fontSize = 13.sp
+            color = Silver.copy(alpha = 0.85f),
+            fontSize = 13.sp,
+            lineHeight = 18.sp
         )
 
         AnimatedVisibility(
             visible = isExpanded,
-            enter = fadeIn(animationSpec = tween(200)) + expandVertically(animationSpec = tween(250)),
-            exit = fadeOut(animationSpec = tween(150)) + shrinkVertically(animationSpec = tween(200))
+            enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+            exit = shrinkVertically(animationSpec = tween(250)) + fadeOut(animationSpec = tween(250))
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(top = 14.dp)
             ) {
-                HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.08f),
+                    thickness = 1.dp
+                )
+
+                Spacer(Modifier.height(14.dp))
 
                 release.sections.forEach { section ->
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = section.title,
-                            color = Silver,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        section.bullets.forEach { bullet ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    text = "•",
-                                    color = Silver,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = bullet,
-                                    color = Muted,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+                    Text(
+                        text = section.title,
+                        color = Silver,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    section.bullets.forEach { bullet ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                text = "•",
+                                color = Muted,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Text(
+                                text = bullet,
+                                color = Silver.copy(alpha = 0.80f),
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
+                    Spacer(Modifier.height(10.dp))
                 }
             }
         }
