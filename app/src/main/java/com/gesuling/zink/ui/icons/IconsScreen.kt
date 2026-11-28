@@ -3,6 +3,7 @@ package com.gesuling.zink.ui.icons
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import java.io.File
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -34,6 +35,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import coil.ImageLoader
+import coil.compose.AsyncImage
+import coil.disk.DiskCache
+import coil.request.ImageRequest
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -60,7 +65,10 @@ data class AppIconItem(
     val appName: String,
     val packageName: String,
     val category: String,
-    val drawableResId: Int
+    val drawableResId: Int,
+    val imageUrl: String? = null,
+    val remoteVersion: String? = null,
+    val remoteDocumentId: String? = null
 )
 
 val sampleIconsList = listOf(
@@ -193,13 +201,31 @@ fun IconsScreen() {
     val searchQuery = IconsStateManager.searchQuery
     val selectedCategory = IconsStateManager.selectedCategory
     var selectedIcon by remember { mutableStateOf<AppIconItem?>(null) }
-
-    val categories = remember {
-        listOf("All") + sampleIconsList.map { it.category }.distinct().sorted()
+    var remoteIcons by remember { mutableStateOf(RemoteIconRepository.readCached(context)) }
+    val allIcons = remember(remoteIcons) { RemoteIconRepository.mergeWithBundled(remoteIcons) }
+    val iconImageLoader = remember(context) {
+        ImageLoader.Builder(context)
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(File(context.cacheDir, "zink_icon_images"))
+                    .maxSizePercent(0.04)
+                    .build()
+            }
+            .build()
     }
 
-    val filteredIcons = remember(searchQuery, selectedCategory) {
-        sampleIconsList.filter { item ->
+    LaunchedEffect(context) {
+        runCatching { RemoteIconRepository.sync(context) }
+            .onSuccess { remoteIcons = it }
+            .onFailure { android.util.Log.w("IconsScreen", "Icon sync failed; showing cached and bundled icons", it) }
+    }
+
+    val categories = remember(allIcons) {
+        listOf("All") + allIcons.map { it.category }.distinct().sorted()
+    }
+
+    val filteredIcons = remember(searchQuery, selectedCategory, allIcons) {
+        allIcons.filter { item ->
             (selectedCategory == "All" || item.category == selectedCategory) &&
                     (searchQuery.isBlank() ||
                             item.appName.contains(searchQuery, ignoreCase = true) ||
@@ -243,7 +269,7 @@ fun IconsScreen() {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { IconsStateManager.setSearchQuery(context, it) },
-                placeholder = { Text("Search 84 icons...", color = Muted, fontSize = 14.sp) },
+                placeholder = { Text("Search icons...", color = Muted, fontSize = 14.sp) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Outlined.Search,
@@ -341,6 +367,7 @@ fun IconsScreen() {
                     ) { iconItem ->
                         IconGridCard(
                             iconItem = iconItem,
+                            imageLoader = iconImageLoader,
                             onClick = { selectedIcon = iconItem }
                         )
                     }
@@ -351,6 +378,7 @@ fun IconsScreen() {
         selectedIcon?.let { iconItem ->
             IconDetailDialog(
                 iconItem = iconItem,
+                imageLoader = iconImageLoader,
                 onDismiss = { selectedIcon = null }
             )
         }
@@ -358,8 +386,27 @@ fun IconsScreen() {
 }
 
 @Composable
+private fun IconArtwork(
+    iconItem: AppIconItem,
+    imageLoader: ImageLoader,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val imageUrl = iconItem.imageUrl
+    if (imageUrl.isNullOrBlank()) {
+        Image(painter = painterResource(iconItem.drawableResId), contentDescription = iconItem.appName, contentScale = ContentScale.Fit, modifier = modifier)
+    } else {
+        val cacheKey = iconItem.id.toString() + "-" + (iconItem.remoteVersion ?: "1")
+        val request = remember(imageUrl, cacheKey) {
+            ImageRequest.Builder(context).data(imageUrl).memoryCacheKey(cacheKey).diskCacheKey(cacheKey).crossfade(true).build()
+        }
+        AsyncImage(model = request, imageLoader = imageLoader, contentDescription = iconItem.appName, contentScale = ContentScale.Fit, placeholder = painterResource(iconItem.drawableResId), error = painterResource(iconItem.drawableResId), fallback = painterResource(iconItem.drawableResId), modifier = modifier)
+    }
+}
+@Composable
 fun IconGridCard(
     iconItem: AppIconItem,
+    imageLoader: ImageLoader,
     onClick: () -> Unit
 ) {
     var isVisible by remember { mutableStateOf(false) }
@@ -381,13 +428,10 @@ fun IconGridCard(
             }
             .pressScale(onClick = onClick)
     ) {
-        Image(
-            painter = painterResource(iconItem.drawableResId),
-            contentDescription = iconItem.appName,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .size(72.dp)
-                .shadow(8.dp, CircleShape)
+        IconArtwork(
+            iconItem = iconItem,
+            imageLoader = imageLoader,
+            modifier = Modifier.size(72.dp).shadow(8.dp, CircleShape)
         )
 
         Spacer(Modifier.height(6.dp))
@@ -408,6 +452,7 @@ fun IconGridCard(
 @Composable
 fun IconDetailDialog(
     iconItem: AppIconItem,
+    imageLoader: ImageLoader,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -453,13 +498,10 @@ fun IconDetailDialog(
                     }
                 }
 
-                Image(
-                    painter = painterResource(iconItem.drawableResId),
-                    contentDescription = iconItem.appName,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .size(110.dp)
-                        .shadow(16.dp, CircleShape)
+                IconArtwork(
+                    iconItem = iconItem,
+                    imageLoader = imageLoader,
+                    modifier = Modifier.size(110.dp).shadow(16.dp, CircleShape)
                 )
 
                 Spacer(Modifier.height(16.dp))
