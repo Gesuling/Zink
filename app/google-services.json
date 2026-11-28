@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "113162018076",
+    "firebase_url": "https://zink-studio-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "zink-studio",
+    "storage_bucket": "zink-studio.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:113162018076:android:85acfe0b817dc1c8736ed9",
+        "android_client_info": {
+          "package_name": "com.gesuling.zink"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "113162018076-2gvqih3772rnab4a21d4oambq1uplmlr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCO01WV_QQBIiN6oqEkp1aGkpveXBC3Y2U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "113162018076-2gvqih3772rnab4a21d4oambq1uplmlr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
