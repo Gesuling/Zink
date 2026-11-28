@@ -3,6 +3,7 @@ package com.gesuling.zink.ui.icons
 import android.content.Context
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -22,7 +23,7 @@ object RemoteIconRepository {
         val snapshot = FirebaseFirestore.getInstance()
             .collection("icons")
             .whereEqualTo("published", true)
-            .get()
+            .get(Source.SERVER)
             .await()
 
         val icons = snapshot.documents.mapNotNull { document ->
